@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Vizsla usage icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b1e14"/>
+      <stop offset="100%" stop-color="#a24f2a"/>
+    </linearGradient>
+    <linearGradient id="graph" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#9bf5da"/>
+      <stop offset="100%" stop-color="#d7fff2"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#bg)"/>
+
+  <path d="M21 80 C25 69, 35 64, 48 63 L62 63 C70 62, 76 57, 81 52 L90 43 C93 40, 97 40, 100 43 C102 45, 102 48, 100 50 L96 56 C99 57, 101 60, 101 63 C101 67, 98 70, 94 71 L86 72 C84 79, 84 86, 86 94 C79 96, 74 94, 71 88 L68 79 L58 79 L54 95 C47 97, 42 95, 41 89 L40 80 L31 80 C27 85, 22 86, 18 83 C17 82, 17 80, 18 79 Z" fill="#f0b27c"/>
+
+  <circle cx="94" cy="56" r="1.8" fill="#3b1e14"/>
+
+  <path d="M30 92 L30 102 L102 102" stroke="#f7dcc1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M36 96 L50 88 L62 92 L75 81 L92 73" fill="none" stroke="url(#graph)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="50" cy="88" r="3" fill="#d7fff2"/>
+  <circle cx="75" cy="81" r="3" fill="#d7fff2"/>
+  <circle cx="92" cy="73" r="3.5" fill="#9bf5da"/>
+</svg>

@@ -1,0 +1,70 @@
+{
+  "name": "ai-usage-limits",
+  "displayName": "AI Usage Limits",
+  "description": "Shows Claude and Codex usage budgets in the VS Code status bar using existing extension logins",
+  "version": "0.1.0",
+  "publisher": "chriswiegman",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisWiegman/vscode-ai-usage-limits.git"
+  },
+  "homepage": "https://github.com/ChrisWiegman/vscode-ai-limits#readme",
+  "bugs": {
+    "url": "https://github.com/ChrisWiegman/vscode-ai-usage-limits/issues"
+  },
+  "icon": "assets/icon.png",
+  "files": [
+    "assets/icon.png",
+    "out/**",
+    "README.md",
+    "LICENSE.txt",
+    "package.json"
+  ],
+  "engines": {
+    "vscode": "^1.109.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "anthropic",
+    "openai",
+    "codex",
+    "budget",
+    "usage"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/src/extension.js",
+  "contributes": {},
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTests.js",
+    "lint": "eslint src test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.3.0",
+    "@types/sinon": "^21.0.0",
+    "@types/vscode": "^1.109.0",
+    "@vscode/test-electron": "^2.5.2",
+    "changie": "^1.24.0",
+    "eslint": "^10.0.1",
+    "mocha": "^11.7.5",
+    "sinon": "^21.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.0"
+  },
+  "overrides": {
+    "diff": "^8.0.3",
+    "glob": "^13.0.6",
+    "minimatch": "^10.2.2"
+  }
+}
