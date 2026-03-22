@@ -1,4 +1,4 @@
-name: Release VSIX
+name: Release
 
 on:
   push:
@@ -15,66 +15,50 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Node
+      - name: Set release version
+        id: vars
+        run: |
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "lts/*"
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Validate tag matches package version
-        id: version
-        run: |
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          TAG_VERSION="${TAG_NAME#v}"
-
-          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
-          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-
-          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "Tag '$TAG_NAME' does not match package.json version '$PACKAGE_VERSION'."
-            exit 1
-          fi
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Build VSIX
-        run: npx @vscode/vsce package
-
-      - name: Locate VSIX
-        id: vsix
-        run: |
-          VSIX_FILE="$(ls -1 *.vsix | head -n 1)"
-          if [ -z "$VSIX_FILE" ]; then
-            echo "No .vsix file was generated."
-            exit 1
-          fi
-          echo "file=$VSIX_FILE" >> "$GITHUB_OUTPUT"
+      - name: Build VSIX package
+        run: node_modules/.bin/vsce package
 
       - name: Read changelog
         id: changelog
         run: |
-          FILE=".changes/${{ steps.version.outputs.package_version }}.md"
-          if [ -f "$FILE" ]; then
-            {
-              echo 'content<<EOF'
-              cat "$FILE"
-              echo 'EOF'
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "content=No changelog found." >> "$GITHUB_OUTPUT"
-          fi
+            FILE=".changes/${{ steps.vars.outputs.version }}.md"
+            if [ -f "$FILE" ]; then
+              {
+                echo 'content<<EOF'
+                cat "$FILE"
+                echo 'EOF'
+              } >> "$GITHUB_OUTPUT"
+            else
+              echo "content=No changelog found." >> "$GITHUB_OUTPUT"
+            fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag_name }}
-          name: ${{ steps.version.outputs.package_version }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.vars.outputs.version }}
           body: ${{ steps.changelog.outputs.content }}
-          files: ${{ steps.vsix.outputs.file }}
+          files: "*.vsix"
