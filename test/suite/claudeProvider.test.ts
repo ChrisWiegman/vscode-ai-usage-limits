@@ -4,6 +4,7 @@ import * as sinon from 'sinon';
 import childProcess = require('child_process');
 import fs = require('fs');
 import { ClaudeProvider, estimateClaudeUsageFromJsonl, extractToken } from '../../src/providers/claudeProvider';
+import { tokenKey, CACHE_TTL_MS, CACHE_PATH } from '../../src/sharedCache';
 
 const EXTENSION_ID = 'anthropic.claude-code';
 
@@ -15,6 +16,7 @@ suite('ClaudeProvider', () => {
   let existsSyncStub: sinon.SinonStub;
   let readdirSyncStub: sinon.SinonStub;
   let fetchStub: sinon.SinonStub;
+  let writeFileSyncStub: sinon.SinonStub;
 
   setup(() => {
     provider = new ClaudeProvider();
@@ -23,6 +25,7 @@ suite('ClaudeProvider', () => {
     readFileSyncStub = sinon.stub(fs, 'readFileSync');
     existsSyncStub = sinon.stub(fs, 'existsSync');
     readdirSyncStub = sinon.stub(fs, 'readdirSync');
+    writeFileSyncStub = sinon.stub(fs, 'writeFileSync');
     fetchStub = sinon.stub(global, 'fetch' as keyof typeof global);
   });
 
@@ -79,7 +82,7 @@ suite('ClaudeProvider', () => {
   test('returns error state when API call fails', async () => {
     getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
     readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }));
-    fetchStub.resolves(fakeResponse({ error: 'Server error' }, 500));
+    fetchStub.rejects(new Error('Server error'));
 
     const status = await provider.getStatus();
     assert.strictEqual(status.authenticated, true);
@@ -92,14 +95,14 @@ suite('ClaudeProvider', () => {
 
   test('uses pre-computed total_cost from API response', async () => {
     fetchStub.resolves(fakeResponse({ total_cost: 2.5 }));
-    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    const budget = await provider.fetchBudget('sk-ant-api03-test');
     assert.ok(budget.fiveHour !== null);
     assert.strictEqual(budget.fiveHour!.used, 2.5);
   });
 
   test('uses cost from data array entries', async () => {
     fetchStub.resolves(fakeResponse({ data: [{ cost: 1.25 }, { cost: 0.75 }] }));
-    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    const budget = await provider.fetchBudget('sk-ant-api03-test');
     assert.ok(budget.fiveHour !== null);
     assert.ok(Math.abs(budget.fiveHour!.used - 2.0) < 0.001);
   });
@@ -107,14 +110,14 @@ suite('ClaudeProvider', () => {
   test('estimates cost from token counts when no cost field', async () => {
     // 1M input × $3 + 0.5M output × $15 = $3 + $7.5 = $10.50
     fetchStub.resolves(fakeResponse({ data: [{ input_tokens: 1_000_000, output_tokens: 500_000 }] }));
-    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    const budget = await provider.fetchBudget('sk-ant-api03-test');
     assert.ok(budget.fiveHour !== null);
     assert.ok(Math.abs(budget.fiveHour!.used - 10.5) < 0.01);
   });
 
   test('returns zero cost for empty response', async () => {
     fetchStub.resolves(fakeResponse({}));
-    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    const budget = await provider.fetchBudget('sk-ant-api03-test');
     assert.ok(budget.fiveHour !== null);
     assert.strictEqual(budget.fiveHour!.used, 0);
   });
@@ -136,6 +139,8 @@ suite('ClaudeProvider', () => {
     assert.strictEqual(budget.fiveHour!.limit, 100);
     assert.strictEqual(budget.oneWeek!.used, 67);
     assert.strictEqual(fetchStub.callCount, 1);
+    assert.deepStrictEqual(budget.fiveHour!.resetsAt, new Date('2026-02-22T23:00:00.000Z'));
+    assert.strictEqual(budget.oneWeek!.resetsAt, undefined);
   });
 
   test('falls back to local Claude project JSONL when usage API is unavailable', async () => {
@@ -161,13 +166,58 @@ suite('ClaudeProvider', () => {
       ].join('\n')
     );
 
-    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    const budget = await provider.fetchBudget('sk-ant-api03-test');
     assert.ok(budget.fiveHour !== null);
     assert.ok(budget.oneWeek !== null);
     assert.strictEqual(budget.fiveHour!.unit, 'usd');
     assert.strictEqual(budget.oneWeek!.unit, 'usd');
     assert.ok(Math.abs(budget.fiveHour!.used - 0.6) < 0.0001);
     assert.ok(Math.abs(budget.oneWeek!.used - 1.2) < 0.0001);
+  });
+  // -------------------------------------------------------------------------
+  // fetchBudget – shared cache
+  // -------------------------------------------------------------------------
+
+  test('returns cached budget without hitting the network when cache is fresh', async () => {
+    const token = 'sk-ant-oat01-test';
+    const key = tokenKey(token);
+    const cacheEntry = {
+      [key]: {
+        fetchedAt: new Date().toISOString(),
+        budget: {
+          fiveHour: { used: 42, limit: 100, unit: 'percent' },
+          oneWeek: { used: 77, limit: 100, unit: 'percent' },
+        },
+      },
+    };
+    readFileSyncStub.withArgs(CACHE_PATH, 'utf8').returns(JSON.stringify(cacheEntry));
+
+    const budget = await provider.fetchBudget(token);
+
+    assert.ok(budget.fiveHour !== null);
+    assert.strictEqual(budget.fiveHour!.used, 42);
+    assert.strictEqual(budget.oneWeek!.used, 77);
+    assert.strictEqual(fetchStub.callCount, 0, 'should not call the network');
+  });
+
+  test('fetches fresh data and writes cache when cache is stale', async () => {
+    const token = 'sk-ant-oat01-test';
+    const key = tokenKey(token);
+    const staleTime = new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString();
+    const cacheEntry = {
+      [key]: {
+        fetchedAt: staleTime,
+        budget: { fiveHour: { used: 1, limit: 100, unit: 'percent' }, oneWeek: null },
+      },
+    };
+    readFileSyncStub.withArgs(CACHE_PATH, 'utf8').returns(JSON.stringify(cacheEntry));
+    fetchStub.resolves(fakeResponse({ five_hour: { utilization: 55 }, seven_day: { utilization: 30 } }));
+
+    const budget = await provider.fetchBudget(token);
+
+    assert.strictEqual(budget.fiveHour!.used, 55);
+    assert.ok(fetchStub.callCount > 0, 'should call the network');
+    assert.ok(writeFileSyncStub.calledOnce, 'should write updated cache');
   });
 });
 

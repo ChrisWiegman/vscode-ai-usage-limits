@@ -8,6 +8,7 @@ import {
   extractOpenAICost,
   parseCodexRateLimitsFromRollout,
 } from '../../src/providers/openaiProvider';
+import { CACHE_PATH, CACHE_TTL_MS, tokenKey } from '../../src/sharedCache';
 
 const EXTENSION_ID = 'openai.chatgpt';
 
@@ -16,11 +17,15 @@ suite('OpenAIProvider', () => {
   let getExtensionStub: sinon.SinonStub;
   let readFileSyncStub: sinon.SinonStub;
   let fetchStub: sinon.SinonStub;
+  let writeFileSyncStub: sinon.SinonStub;
+  let mkdirSyncStub: sinon.SinonStub;
 
   setup(() => {
     provider = new OpenAIProvider();
     getExtensionStub = sinon.stub(vscode.extensions, 'getExtension');
     readFileSyncStub = sinon.stub(fs, 'readFileSync');
+    writeFileSyncStub = sinon.stub(fs, 'writeFileSync');
+    mkdirSyncStub = sinon.stub(fs, 'mkdirSync');
     fetchStub = sinon.stub(global, 'fetch' as keyof typeof global);
   });
 
@@ -93,6 +98,73 @@ suite('OpenAIProvider', () => {
     readFileSyncStub.returns('{}');
     const token = provider.resolveToken();
     assert.strictEqual(token, undefined);
+  });
+
+  test('returns unavailable budget when usage endpoint denies access', async () => {
+    fetchStub.callsFake(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/v1/dashboard/billing/subscription')) {
+        return fakeResponse({}, 200);
+      }
+      return fakeResponse({ error: 'forbidden' }, 403);
+    });
+
+    const budget = await provider.fetchBudget('sk-openai-test');
+
+    assert.strictEqual(budget.fiveHour, null);
+    assert.strictEqual(budget.oneWeek, null);
+  });
+
+  test('returns cached budget without hitting the network when cache is fresh', async () => {
+    const token = 'sk-openai-test';
+    const key = tokenKey(token);
+    const cacheEntry = {
+      [key]: {
+        fetchedAt: new Date().toISOString(),
+        budget: {
+          fiveHour: { used: 1.5, limit: 20, unit: 'usd' },
+          oneWeek: { used: 5, limit: 100, unit: 'usd' },
+        },
+      },
+    };
+    readFileSyncStub.withArgs(CACHE_PATH, 'utf8').returns(JSON.stringify(cacheEntry));
+
+    const budget = await provider.fetchBudget(token);
+
+    assert.strictEqual(budget.fiveHour!.used, 1.5);
+    assert.strictEqual(budget.oneWeek!.used, 5);
+    assert.strictEqual(fetchStub.callCount, 0);
+  });
+
+  test('fetches fresh data and writes cache when cache is stale', async () => {
+    const token = 'sk-openai-test';
+    const key = tokenKey(token);
+    const staleTime = new Date(Date.now() - CACHE_TTL_MS - 1000).toISOString();
+    const cacheEntry = {
+      [key]: {
+        fetchedAt: staleTime,
+        budget: {
+          fiveHour: { used: 1, limit: 20, unit: 'usd' },
+          oneWeek: null,
+        },
+      },
+    };
+    readFileSyncStub.withArgs(CACHE_PATH, 'utf8').returns(JSON.stringify(cacheEntry));
+    fetchStub.callsFake(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/v1/dashboard/billing/subscription')) {
+        return fakeResponse({ soft_limit_usd: 25, hard_limit_usd: 50 });
+      }
+      return fakeResponse({ data: [] });
+    });
+
+    const budget = await provider.fetchBudget(token);
+
+    assert.strictEqual(budget.fiveHour!.used, 0);
+    assert.strictEqual(budget.fiveHour!.limit, 25);
+    assert.strictEqual(budget.oneWeek!.limit, 50);
+    assert.ok(mkdirSyncStub.calledOnce, 'should ensure cache directory exists');
+    assert.ok(writeFileSyncStub.calledOnce, 'should write updated cache');
   });
 });
 
@@ -184,7 +256,7 @@ suite('extractOpenAICost', () => {
 suite('parseCodexRateLimitsFromRollout', () => {
   test('extracts 5h and 7d percentage windows from token_count events', () => {
     const raw = [
-      '{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":3,"window_minutes":300},"secondary":{"used_percent":13,"window_minutes":10080}}}}',
+      '{"type":"event_msg","timestamp":"2026-03-22T10:00:00.000Z","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":3,"window_minutes":300},"secondary":{"used_percent":13,"window_minutes":10080}}}}',
     ].join('\n');
 
     const budget = parseCodexRateLimitsFromRollout(raw);
@@ -194,15 +266,26 @@ suite('parseCodexRateLimitsFromRollout', () => {
     assert.strictEqual(budget!.fiveHour!.used, 3);
     assert.strictEqual(budget!.fiveHour!.limit, 100);
     assert.strictEqual(budget!.fiveHour!.unit, 'percent');
+    assert.deepStrictEqual(budget!.fiveHour!.resetsAt, new Date('2026-03-22T15:00:00.000Z'));
     assert.strictEqual(budget!.oneWeek!.used, 13);
     assert.strictEqual(budget!.oneWeek!.limit, 100);
     assert.strictEqual(budget!.oneWeek!.unit, 'percent');
+    assert.deepStrictEqual(budget!.oneWeek!.resetsAt, new Date('2026-03-29T10:00:00.000Z'));
   });
 
   test('returns null for rollout data without rate limit snapshots', () => {
     const raw = '{"type":"event_msg","payload":{"type":"token_count"}}\n';
     const budget = parseCodexRateLimitsFromRollout(raw);
     assert.strictEqual(budget, null);
+  });
+
+  test('uses fallback timestamp when rollout event has no timestamp', () => {
+    const raw = '{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":20,"window_minutes":300}}}}\n';
+    const fallback = new Date('2026-03-22T12:00:00.000Z');
+
+    const budget = parseCodexRateLimitsFromRollout(raw, fallback);
+
+    assert.deepStrictEqual(budget!.fiveHour!.resetsAt, new Date('2026-03-22T17:00:00.000Z'));
   });
 });
 

@@ -8,6 +8,8 @@ export interface UsagePeriod {
   limit: number | null;
   /** Display unit for `used`/`limit`. */
   unit?: 'usd' | 'percent';
+  /** When this usage window resets, if known. */
+  resetsAt?: Date;
 }
 
 /**

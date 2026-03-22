@@ -1,6 +1,6 @@
 NPM := npm
 NPX := npx
-VSCE := $(NPX) vsce
+VSCE := node_modules/.bin/vsce
 
 .PHONY: install
 install:
@@ -24,6 +24,7 @@ test:
 
 .PHONY: package
 package:
+	rm *.vsix
 	$(VSCE) package
 
 .PHONY: clean

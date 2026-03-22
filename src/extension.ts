@@ -7,17 +7,31 @@ import { OpenAIProvider } from './providers/openaiProvider';
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const SHOW_OUTPUT_COMMAND = 'ai-limits.showOutput';
+const OPEN_CLAUDE_SETTINGS_COMMAND = 'ai-limits.openClaudeSettings';
+const OPEN_OPENAI_SETTINGS_COMMAND = 'ai-limits.openOpenAISettings';
+const CLAUDE_SETTINGS_URL = 'https://claude.ai/settings/usage';
+const OPENAI_SETTINGS_URL = 'https://chatgpt.com/codex/settings/usage';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel('AI Limits');
-  const statusBar = new StatusBarManager(SHOW_OUTPUT_COMMAND);
+  const statusBar = new StatusBarManager(
+    SHOW_OUTPUT_COMMAND,
+    OPEN_CLAUDE_SETTINGS_COMMAND,
+    OPEN_OPENAI_SETTINGS_COMMAND
+  );
   const claude = new ClaudeProvider();
   const openai = new OpenAIProvider();
 
   context.subscriptions.push(output, statusBar);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(SHOW_OUTPUT_COMMAND, () => output.show())
+    vscode.commands.registerCommand(SHOW_OUTPUT_COMMAND, () => output.show()),
+    vscode.commands.registerCommand(OPEN_CLAUDE_SETTINGS_COMMAND, () =>
+      vscode.env.openExternal(vscode.Uri.parse(CLAUDE_SETTINGS_URL))
+    ),
+    vscode.commands.registerCommand(OPEN_OPENAI_SETTINGS_COMMAND, () =>
+      vscode.env.openExternal(vscode.Uri.parse(OPENAI_SETTINGS_URL))
+    )
   );
 
   async function refresh(): Promise<void> {
@@ -34,6 +48,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ? openaiResult.value
       : { available: true, authenticated: false, budget: null, error: String(openaiResult.reason) };
 
+    const now = new Date();
+    statusBar.setRefreshInfo(now, new Date(now.getTime() + REFRESH_INTERVAL_MS));
     statusBar.updateClaude(claudeStatus);
     statusBar.updateOpenAI(openaiStatus);
 
@@ -54,14 +70,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const timer = setInterval(() => { void refresh(); }, REFRESH_INTERVAL_MS);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
 
+  // Debounced refresh for event-driven triggers to avoid back-to-back API
+  // bursts (e.g. the extension's own installation fires onDidChange).
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const debouncedRefresh = (): void => {
+    if (debounceTimer !== undefined) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      void refresh();
+    }, 5_000);
+  };
+
   // Refresh when any extension is installed or uninstalled
   context.subscriptions.push(
-    vscode.extensions.onDidChange(() => { void refresh(); })
+    vscode.extensions.onDidChange(debouncedRefresh)
   );
 
   // Refresh when authentication sessions change (user signs in/out)
   context.subscriptions.push(
-    vscode.authentication.onDidChangeSessions(() => { void refresh(); })
+    vscode.authentication.onDidChangeSessions(debouncedRefresh)
   );
 }
 

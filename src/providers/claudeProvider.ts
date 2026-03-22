@@ -19,6 +19,8 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import * as vscode from 'vscode';
 import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
+import { fetchWithRetry } from '../fetchWithRetry';
+import { readCache, writeCache, tokenKey } from '../sharedCache';
 
 const EXTENSION_ID = 'anthropic.claude-code';
 const API_BASE = 'https://api.anthropic.com';
@@ -123,9 +125,25 @@ export class ClaudeProvider {
   }
 
   async fetchBudget(accessToken: string): Promise<BudgetInfo> {
-    const oauthUsage = await this.fetchOAuthUsage(accessToken);
-    if (oauthUsage) {
-      return oauthUsage;
+    const key = tokenKey(accessToken);
+    const cached = readCache(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    const budget = await this.fetchFreshBudget(accessToken);
+    writeCache(key, budget);
+    return budget;
+  }
+
+  private async fetchFreshBudget(accessToken: string): Promise<BudgetInfo> {
+    const isOAuthToken = accessToken.startsWith('sk-ant-oat');
+
+    // OAuth tokens surface percentage utilization via a dedicated endpoint.
+    // If that endpoint is unavailable we return no data — the JSONL cost
+    // estimates are meaningless for subscription users who see percentages.
+    if (isOAuthToken) {
+      return (await this.fetchOAuthUsage(accessToken)) ?? { fiveHour: null, oneWeek: null };
     }
 
     const now = new Date();
@@ -153,7 +171,7 @@ export class ClaudeProvider {
     }
 
     const url = `${API_BASE}/api/oauth/usage`;
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
@@ -162,10 +180,9 @@ export class ClaudeProvider {
     });
 
     if (!response.ok) {
-      if ([401, 403, 404].includes(response.status)) {
-        return null;
-      }
-      throw new Error(`Anthropic OAuth usage API ${response.status}: ${await response.text()}`);
+      // Any non-success (including 429 rate-limit) falls through to the
+      // standard usage API or local-file fallback rather than surfacing an error.
+      return null;
     }
 
     const data = (await response.json()) as ClaudeOAuthUsageResponse;
@@ -226,16 +243,12 @@ export class ClaudeProvider {
     });
 
     const url = `${API_BASE}/v1/usage?${params.toString()}`;
-    const response = await fetch(url, { headers: buildHeaders(token) });
+    const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
 
     if (!response.ok) {
-      // 404 means the endpoint doesn't exist for this token type (consumer
-      // OAuth tokens lack access to the usage API). 401/403 means the same.
-      // Treat all three as "data unavailable" rather than an error.
-      if ([401, 403, 404].includes(response.status)) {
-        return null;
-      }
-      throw new Error(`Anthropic API ${response.status}: ${await response.text()}`);
+      // Any non-success (including 429 rate-limit) falls through to the
+      // local-file fallback rather than surfacing an error.
+      return null;
     }
 
     const data = (await response.json()) as AnthropicUsageResponse;
@@ -305,7 +318,15 @@ function extractOAuthUsagePeriod(window: ClaudeOAuthUsageWindow | undefined): Us
   // Some APIs return 0-1, others return 0-100. Normalize to percent.
   const raw = window.utilization;
   const used = raw <= 1 ? raw * 100 : raw;
-  return { used, limit: 100, unit: 'percent' };
+
+  const period: UsagePeriod = { used, limit: 100, unit: 'percent' };
+  if (window.resets_at) {
+    const resetsAt = new Date(window.resets_at);
+    if (!Number.isNaN(resetsAt.getTime())) {
+      period.resetsAt = resetsAt;
+    }
+  }
+  return period;
 }
 
 function collectJsonlFiles(root: string): string[] {

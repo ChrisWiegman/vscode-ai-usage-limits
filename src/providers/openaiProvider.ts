@@ -21,6 +21,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
+import { fetchWithRetry } from '../fetchWithRetry';
+import { readCache, tokenKey, writeCache } from '../sharedCache';
 
 const EXTENSION_ID = 'openai.chatgpt';
 const API_BASE = 'https://api.openai.com';
@@ -37,6 +39,7 @@ interface CodexAuth {
 
 interface CodexSessionEvent {
   type?: string;
+  timestamp?: string | number;
   payload?: {
     type?: string;
     rate_limits?: CodexRateLimitSnapshot;
@@ -104,6 +107,18 @@ export class OpenAIProvider {
   }
 
   async fetchBudget(accessToken: string): Promise<BudgetInfo> {
+    const key = tokenKey(accessToken);
+    const cached = readCache(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    const budget = await this.fetchFreshBudget(accessToken);
+    writeCache(key, budget);
+    return budget;
+  }
+
+  private async fetchFreshBudget(accessToken: string): Promise<BudgetInfo> {
     // JWT tokens (Codex OAuth auth_mode) are not valid OpenAI Platform API
     // keys. Use locally cached rate-limit windows as a fallback.
     if (isJwt(accessToken)) {
@@ -114,11 +129,9 @@ export class OpenAIProvider {
     const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const [subscription, fiveHour, oneWeek] = await Promise.all([
-      this.fetchSubscription(accessToken),
-      this.fetchPeriod(accessToken, fiveHoursAgo, now),
-      this.fetchPeriod(accessToken, oneWeekAgo, now),
-    ]);
+    const subscription = await this.fetchSubscription(accessToken);
+    const fiveHour = await this.fetchPeriod(accessToken, fiveHoursAgo, now);
+    const oneWeek = await this.fetchPeriod(accessToken, oneWeekAgo, now);
 
     return {
       fiveHour: fiveHour === null
@@ -138,7 +151,8 @@ export class OpenAIProvider {
 
     try {
       const raw = fs.readFileSync(latestRollout, 'utf8');
-      return parseCodexRateLimitsFromRollout(raw);
+      const stat = fs.statSync(latestRollout);
+      return parseCodexRateLimitsFromRollout(raw, stat.mtime);
     } catch {
       return null;
     }
@@ -152,22 +166,20 @@ export class OpenAIProvider {
     const days = collectDays(start, end);
     let totalCost = 0;
 
-    await Promise.all(
-      days.map(async (dateStr) => {
-        const url = `${API_BASE}/v1/usage?date=${dateStr}`;
-        const response = await fetch(url, { headers: buildHeaders(token) });
-        if (!response.ok) {
-          // 401/403/404 means the key lacks usage API access – treat as
-          // unavailable rather than an error.
-          if ([401, 403, 404].includes(response.status)) {
-            return;
-          }
-          throw new Error(`OpenAI API ${response.status}: ${await response.text()}`);
+    for (const dateStr of days) {
+      const url = `${API_BASE}/v1/usage?date=${dateStr}`;
+      const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
+      if (!response.ok) {
+        // 401/403/404 means the key lacks usage API access – treat as
+        // unavailable rather than an error.
+        if ([401, 403, 404].includes(response.status)) {
+          return null;
         }
-        const data = (await response.json()) as OpenAIUsageResponse;
-        totalCost += extractOpenAICost(data, dateStr, start, end);
-      })
-    );
+        throw new Error(`OpenAI API ${response.status}: ${await response.text()}`);
+      }
+      const data = (await response.json()) as OpenAIUsageResponse;
+      totalCost += extractOpenAICost(data, dateStr, start, end);
+    }
 
     return { used: totalCost, limit: null };
   }
@@ -177,7 +189,7 @@ export class OpenAIProvider {
   ): Promise<{ softLimit: number | null; hardLimit: number | null } | null> {
     try {
       const url = `${API_BASE}/v1/dashboard/billing/subscription`;
-      const response = await fetch(url, { headers: buildHeaders(token) });
+      const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
       if (!response.ok) return null;
       const data = (await response.json()) as OpenAISubscriptionResponse;
       return {
@@ -305,7 +317,7 @@ function findLatestRolloutFile(root: string): string | null {
   return latestPath;
 }
 
-export function parseCodexRateLimitsFromRollout(raw: string): BudgetInfo | null {
+export function parseCodexRateLimitsFromRollout(raw: string, fallbackTimestamp?: Date): BudgetInfo | null {
   const lines = raw.split('\n').filter(Boolean);
   for (let index = lines.length - 1; index >= 0; index--) {
     try {
@@ -324,10 +336,11 @@ export function parseCodexRateLimitsFromRollout(raw: string): BudgetInfo | null 
 
       const fiveHourWindow = pickRateLimitWindow(windows, 300);
       const oneWeekWindow = pickRateLimitWindow(windows, 10080);
+      const snapshotTimestamp = parseEventTimestamp(event.timestamp) ?? fallbackTimestamp;
 
       return {
-        fiveHour: toPercentPeriod(fiveHourWindow),
-        oneWeek: toPercentPeriod(oneWeekWindow),
+        fiveHour: toPercentPeriod(fiveHourWindow, snapshotTimestamp),
+        oneWeek: toPercentPeriod(oneWeekWindow, snapshotTimestamp),
       };
     } catch {
       // Ignore malformed lines and keep searching backward.
@@ -357,14 +370,32 @@ function pickRateLimitWindow(
 }
 
 function toPercentPeriod(
-  window: { used_percent?: number; window_minutes?: number | null } | null
+  window: { used_percent?: number; window_minutes?: number | null } | null,
+  snapshotTimestamp?: Date
 ): UsagePeriod | null {
   if (!window || typeof window.used_percent !== 'number') {
     return null;
   }
-  return {
+  const period: UsagePeriod = {
     used: window.used_percent,
     limit: 100,
     unit: 'percent',
   };
+
+  if (snapshotTimestamp && typeof window.window_minutes === 'number') {
+    period.resetsAt = new Date(snapshotTimestamp.getTime() + window.window_minutes * 60_000);
+  }
+
+  return period;
+}
+
+function parseEventTimestamp(value: string | number | undefined): Date | undefined {
+  if (value === undefined) return undefined;
+  const date = typeof value === 'number'
+    ? new Date(value)
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date;
 }

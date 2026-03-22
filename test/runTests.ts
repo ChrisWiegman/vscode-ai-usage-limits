@@ -1,7 +1,16 @@
 import * as path from 'path';
 import { runTests } from '@vscode/test-electron';
 
+function sanitizeLaunchEnv(): void {
+  // When tests are started from inside VS Code, these inherited flags can cause
+  // the downloaded test host to boot as plain Electron/Node instead of VS Code.
+  delete process.env.ELECTRON_RUN_AS_NODE;
+  delete process.env.VSCODE_CLI;
+}
+
 async function main(): Promise<void> {
+  sanitizeLaunchEnv();
+
   const extensionDevelopmentPath = path.resolve(__dirname, '../../');
   const extensionTestsPath = path.resolve(__dirname, './suite/index');
 

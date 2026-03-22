@@ -21,7 +21,11 @@ suite('StatusBarManager', () => {
         : (openaiItem as unknown as vscode.StatusBarItem);
     });
 
-    manager = new StatusBarManager('ai-limits.showOutput');
+    manager = new StatusBarManager(
+      'ai-limits.showOutput',
+      'ai-limits.openClaudeSettings',
+      'ai-limits.openOpenAISettings'
+    );
   });
 
   teardown(() => {
@@ -43,12 +47,16 @@ suite('StatusBarManager', () => {
     manager.updateClaude({ available: true, authenticated: false, budget: null, error: null });
     assert.ok(!claudeItem.hidden);
     assert.ok(claudeItem.text.includes('sign in'), `expected "sign in" in "${claudeItem.text}"`);
+    assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
+    assert.strictEqual(claudeItem.command, 'ai-limits.openClaudeSettings');
   });
 
   test('shows error state when Claude has an error', () => {
     manager.updateClaude({ available: true, authenticated: true, budget: null, error: 'timeout' });
     assert.ok(!claudeItem.hidden);
     assert.ok(claudeItem.text.includes('error'), `expected "error" in "${claudeItem.text}"`);
+    assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
+    assert.strictEqual(claudeItem.command, 'ai-limits.showOutput');
   });
 
   test('shows budget amounts when Claude is fully loaded', () => {
@@ -64,12 +72,29 @@ suite('StatusBarManager', () => {
     assert.ok(!claudeItem.hidden);
     assert.ok(claudeItem.text.includes('0.12'), `"5h" cost in "${claudeItem.text}"`);
     assert.ok(claudeItem.text.includes('1.57'), `"7d" cost in "${claudeItem.text}"`);
+    assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
+    assert.strictEqual(claudeItem.command, 'ai-limits.openClaudeSettings');
   });
 
   test('shows loading spinner when budget is null but authenticated', () => {
     manager.updateClaude({ available: true, authenticated: true, budget: null, error: null });
     assert.ok(!claudeItem.hidden);
-    assert.ok(claudeItem.text.includes('sync~spin') || claudeItem.text.includes('Claude'));
+    assert.ok(claudeItem.text.includes('...'), `expected compact loading state in "${claudeItem.text}"`);
+    assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
+  });
+
+  test('shows unavailable state when both budget windows are missing', () => {
+    manager.updateClaude({
+      available: true,
+      authenticated: true,
+      budget: { fiveHour: null, oneWeek: null },
+      error: null,
+    });
+    assert.ok(!claudeItem.hidden);
+    assert.ok(claudeItem.text.includes('unavailable'), `expected "unavailable" in "${claudeItem.text}"`);
+    assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
+    const tooltip = tooltipValue(claudeItem.tooltip);
+    assert.ok(tooltip.includes('Usage data is currently unavailable'), `unexpected tooltip: ${tooltip}`);
   });
 
   // -------------------------------------------------------------------------
@@ -94,6 +119,8 @@ suite('StatusBarManager', () => {
     assert.ok(!openaiItem.hidden);
     assert.ok(openaiItem.text.includes('0.05'), `5h cost in "${openaiItem.text}"`);
     assert.ok(openaiItem.text.includes('3.00'), `7d cost in "${openaiItem.text}"`);
+    assert.ok(!openaiItem.text.includes('Codex'), `did not expect full label in "${openaiItem.text}"`);
+    assert.strictEqual(openaiItem.command, 'ai-limits.openOpenAISettings');
   });
 
   test('shows percent format when periods are rate-limit percentages', () => {
@@ -108,6 +135,37 @@ suite('StatusBarManager', () => {
     });
     assert.ok(openaiItem.text.includes('5h:3%'), `5h percent in "${openaiItem.text}"`);
     assert.ok(openaiItem.text.includes('7d:13%'), `7d percent in "${openaiItem.text}"`);
+    assert.ok(!openaiItem.text.includes('Codex'), `did not expect full label in "${openaiItem.text}"`);
+  });
+
+  test('tooltip shows reset time when resetsAt is provided', () => {
+    const resetsAt = new Date(Date.now() + 2 * 60 * 60 * 1000 + 15 * 60 * 1000); // 2h 15m from now
+    manager.updateClaude({
+      available: true,
+      authenticated: true,
+      error: null,
+      budget: {
+        fiveHour: { used: 45, limit: 100, unit: 'percent', resetsAt },
+        oneWeek: { used: 10, limit: 100, unit: 'percent' },
+      },
+    });
+    const tooltip = tooltipValue(claudeItem.tooltip);
+    assert.ok(tooltip.includes('Resets:'), `expected "Resets:" in tooltip: ${tooltip}`);
+    assert.ok(tooltip.includes('in 2h'), `expected relative time in tooltip: ${tooltip}`);
+  });
+
+  test('tooltip omits reset time when resetsAt is absent', () => {
+    manager.updateClaude({
+      available: true,
+      authenticated: true,
+      error: null,
+      budget: {
+        fiveHour: { used: 45, limit: 100, unit: 'percent' },
+        oneWeek: { used: 10, limit: 100, unit: 'percent' },
+      },
+    });
+    const tooltip = tooltipValue(claudeItem.tooltip);
+    assert.ok(!tooltip.includes('Resets:'), `unexpected "Resets:" in tooltip: ${tooltip}`);
   });
 
   // -------------------------------------------------------------------------
@@ -129,9 +187,15 @@ function notAvailable(): ProviderStatus {
   return { available: false, authenticated: false, budget: null, error: null };
 }
 
+function tooltipValue(tooltip: string | vscode.MarkdownString): string {
+  if (typeof tooltip === 'string') return tooltip;
+  return tooltip.value;
+}
+
 class FakeStatusBarItem {
   text = '';
   tooltip: string | vscode.MarkdownString = '';
+  command: string | vscode.Command | undefined;
   hidden = true;
   disposed = false;
 

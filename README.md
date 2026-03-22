@@ -6,6 +6,7 @@ A VS Code extension that shows your **Claude** and **Codex (ChatGPT)** usage bud
 
 - **Claude budget** – powered by the [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) extension login
 - **Codex budget** – powered by the [ChatGPT](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) extension login
+- **Quick jump to account settings** – click either status bar meter to open that service's settings page
 - Displays **last 5 hours** and **last 7 days** cost in the status bar
 - Tooltip shows detailed breakdown including limit (if one is configured)
 - Auto-refreshes every 5 minutes and whenever authentication sessions change
