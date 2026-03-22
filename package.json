@@ -51,20 +51,21 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^25.3.0",
+    "@types/node": "^25.5.0",
     "@types/sinon": "^21.0.0",
-    "@types/vscode": "^1.109.0",
+    "@types/vscode": "^1.110.0",
     "@vscode/test-electron": "^2.5.2",
     "changie": "^1.24.0",
-    "eslint": "^10.0.1",
+    "eslint": "^10.1.0",
     "mocha": "^11.7.5",
-    "sinon": "^21.0.1",
+    "sinon": "^21.0.3",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.0"
+    "typescript-eslint": "^8.57.1"
   },
   "overrides": {
     "diff": "^8.0.3",
     "glob": "^13.0.6",
-    "minimatch": "^10.2.2"
+    "minimatch": "^10.2.4",
+    "serialize-javascript": "^7.0.4"
   }
 }
