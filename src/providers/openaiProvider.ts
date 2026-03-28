@@ -376,17 +376,32 @@ function toPercentPeriod(
   if (!window || typeof window.used_percent !== 'number') {
     return null;
   }
-  const period: UsagePeriod = {
-    used: window.used_percent,
-    limit: 100,
-    unit: 'percent',
-  };
 
+  // If we know when the snapshot was taken and how long the window is, check
+  // whether the window has already reset.  A snapshot older than one full
+  // window period means the usage figure it carries belongs to a previous
+  // window and is no longer meaningful – return null so the status bar shows
+  // "no data" rather than a stale (potentially very wrong) percentage.
   if (snapshotTimestamp && typeof window.window_minutes === 'number') {
-    period.resetsAt = new Date(snapshotTimestamp.getTime() + window.window_minutes * 60_000);
+    const windowMs = window.window_minutes * 60_000;
+    const snapshotAge = Date.now() - snapshotTimestamp.getTime();
+
+    // Rate-limit windows are rolling (sliding): the window covering [T-W, T]
+    // at snapshot time has drifted to [now-W, now] today.  The fraction of the
+    // snapshot's data that still falls inside the current window is
+    // approximately (W - snapshotAge) / W.  Once less than half the original
+    // window is still relevant the snapshot is no longer a useful indicator of
+    // current utilisation – return null so the status bar shows "unavailable"
+    // rather than a misleading stale percentage.
+    if (snapshotAge >= windowMs / 2) {
+      return null;
+    }
+
+    const resetsAt = new Date(snapshotTimestamp.getTime() + windowMs);
+    return { used: window.used_percent, limit: 100, unit: 'percent', resetsAt };
   }
 
-  return period;
+  return { used: window.used_percent, limit: 100, unit: 'percent' };
 }
 
 function parseEventTimestamp(value: string | number | undefined): Date | undefined {

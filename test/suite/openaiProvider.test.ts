@@ -254,23 +254,78 @@ suite('extractOpenAICost', () => {
 // ---------------------------------------------------------------------------
 
 suite('parseCodexRateLimitsFromRollout', () => {
-  test('extracts 5h and 7d percentage windows from token_count events', () => {
+  test('extracts 5h and 7d percentage windows from a fresh token_count event', () => {
+    // Use a snapshot from 1 hour ago so both windows are still within their periods.
+    const snapshotTime = new Date(Date.now() - 60 * 60 * 1000);
     const raw = [
-      '{"type":"event_msg","timestamp":"2026-03-22T10:00:00.000Z","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":3,"window_minutes":300},"secondary":{"used_percent":13,"window_minutes":10080}}}}',
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: snapshotTime.toISOString(),
+        payload: {
+          type: 'token_count',
+          rate_limits: {
+            primary: { used_percent: 3, window_minutes: 300 },
+            secondary: { used_percent: 13, window_minutes: 10080 },
+          },
+        },
+      }),
     ].join('\n');
 
     const budget = parseCodexRateLimitsFromRollout(raw);
     assert.ok(budget !== null);
-    assert.ok(budget!.fiveHour !== null);
-    assert.ok(budget!.oneWeek !== null);
+    assert.ok(budget!.fiveHour !== null, 'fiveHour should be present for fresh snapshot');
+    assert.ok(budget!.oneWeek !== null, 'oneWeek should be present for fresh snapshot');
     assert.strictEqual(budget!.fiveHour!.used, 3);
     assert.strictEqual(budget!.fiveHour!.limit, 100);
     assert.strictEqual(budget!.fiveHour!.unit, 'percent');
-    assert.deepStrictEqual(budget!.fiveHour!.resetsAt, new Date('2026-03-22T15:00:00.000Z'));
+    const expectedFiveHourReset = new Date(snapshotTime.getTime() + 300 * 60_000);
+    assert.ok(Math.abs(budget!.fiveHour!.resetsAt!.getTime() - expectedFiveHourReset.getTime()) < 1000);
     assert.strictEqual(budget!.oneWeek!.used, 13);
     assert.strictEqual(budget!.oneWeek!.limit, 100);
     assert.strictEqual(budget!.oneWeek!.unit, 'percent');
-    assert.deepStrictEqual(budget!.oneWeek!.resetsAt, new Date('2026-03-29T10:00:00.000Z'));
+    const expectedOneWeekReset = new Date(snapshotTime.getTime() + 10080 * 60_000);
+    assert.ok(Math.abs(budget!.oneWeek!.resetsAt!.getTime() - expectedOneWeekReset.getTime()) < 1000);
+  });
+
+  test('returns null for 5h window when snapshot is older than half the window duration', () => {
+    // Snapshot from 3 hours ago – older than half of 5 hours (2.5h threshold).
+    const snapshotTime = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const raw = JSON.stringify({
+      type: 'event_msg',
+      timestamp: snapshotTime.toISOString(),
+      payload: {
+        type: 'token_count',
+        rate_limits: {
+          primary: { used_percent: 80, window_minutes: 300 },
+        },
+      },
+    });
+
+    const budget = parseCodexRateLimitsFromRollout(raw);
+    assert.ok(budget !== null);
+    // More than half the 5-hour window has elapsed – stale data must not be shown.
+    assert.strictEqual(budget!.fiveHour, null, 'fiveHour should be null for snapshot older than half the window');
+  });
+
+  test('returns null for 7d window when snapshot is older than half the window duration', () => {
+    // Snapshot from 6 days ago – older than half of 7 days (3.5d threshold).
+    const snapshotTime = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    const raw = JSON.stringify({
+      type: 'event_msg',
+      timestamp: snapshotTime.toISOString(),
+      payload: {
+        type: 'token_count',
+        rate_limits: {
+          primary: { used_percent: 5, window_minutes: 300 },
+          secondary: { used_percent: 90, window_minutes: 10080 },
+        },
+      },
+    });
+
+    const budget = parseCodexRateLimitsFromRollout(raw);
+    assert.ok(budget !== null);
+    assert.strictEqual(budget!.fiveHour, null, 'fiveHour should be null (6d > 2.5h threshold)');
+    assert.strictEqual(budget!.oneWeek, null, 'oneWeek should be null (6d > 3.5d threshold)');
   });
 
   test('returns null for rollout data without rate limit snapshots', () => {
@@ -280,12 +335,15 @@ suite('parseCodexRateLimitsFromRollout', () => {
   });
 
   test('uses fallback timestamp when rollout event has no timestamp', () => {
+    // Use a recent fallback so the window is still active.
+    const fallback = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes ago
     const raw = '{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":20,"window_minutes":300}}}}\n';
-    const fallback = new Date('2026-03-22T12:00:00.000Z');
 
     const budget = parseCodexRateLimitsFromRollout(raw, fallback);
 
-    assert.deepStrictEqual(budget!.fiveHour!.resetsAt, new Date('2026-03-22T17:00:00.000Z'));
+    assert.ok(budget!.fiveHour !== null, 'fiveHour should be present for recent fallback');
+    const expectedReset = new Date(fallback.getTime() + 300 * 60_000);
+    assert.ok(Math.abs(budget!.fiveHour!.resetsAt!.getTime() - expectedReset.getTime()) < 1000);
   });
 });
 
