@@ -113,6 +113,7 @@ suite('OpenAIProvider', () => {
 
     assert.strictEqual(budget.fiveHour, null);
     assert.strictEqual(budget.oneWeek, null);
+    assert.strictEqual(writeFileSyncStub.called, false, 'should not cache all-null budgets');
   });
 
   test('returns cached budget without hitting the network when cache is fresh', async () => {
@@ -344,6 +345,29 @@ suite('parseCodexRateLimitsFromRollout', () => {
     assert.ok(budget!.fiveHour !== null, 'fiveHour should be present for recent fallback');
     const expectedReset = new Date(fallback.getTime() + 300 * 60_000);
     assert.ok(Math.abs(budget!.fiveHour!.resetsAt!.getTime() - expectedReset.getTime()) < 1000);
+  });
+
+  test('prefers the rollout resets_at timestamp when present', () => {
+    const snapshotTime = new Date(Date.now() - 60 * 60 * 1000);
+    const explicitReset = Math.floor((Date.now() + 42 * 60 * 1000) / 1000);
+    const raw = JSON.stringify({
+      type: 'event_msg',
+      timestamp: snapshotTime.toISOString(),
+      payload: {
+        type: 'token_count',
+        rate_limits: {
+          primary: { used_percent: 20, window_minutes: 300, resets_at: explicitReset },
+        },
+      },
+    });
+
+    const budget = parseCodexRateLimitsFromRollout(raw);
+
+    assert.ok(budget?.fiveHour?.resetsAt);
+    assert.strictEqual(
+      budget!.fiveHour!.resetsAt!.getTime(),
+      explicitReset * 1000
+    );
   });
 });
 

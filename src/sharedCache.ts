@@ -70,7 +70,8 @@ export function readCache(key: string): BudgetInfo | null {
     if (age > CACHE_TTL_MS) {
       return null;
     }
-    return deserializeBudget(entry.budget);
+    const budget = deserializeBudget(entry.budget);
+    return hasUsableBudget(budget) ? budget : null;
   } catch {
     return null;
   }
@@ -79,6 +80,10 @@ export function readCache(key: string): BudgetInfo | null {
 /** Persists budget data to the shared cache file.  Failures are silently
  *  swallowed — the extension continues to work without cross-window dedup. */
 export function writeCache(key: string, budget: BudgetInfo): void {
+  if (!hasUsableBudget(budget)) {
+    return;
+  }
+
   try {
     let file: CacheFile = {};
     try {
@@ -126,4 +131,8 @@ function deserializeBudget(b: SerializedBudget): BudgetInfo {
     fiveHour: b.fiveHour ? deserializePeriod(b.fiveHour) : null,
     oneWeek: b.oneWeek ? deserializePeriod(b.oneWeek) : null,
   };
+}
+
+function hasUsableBudget(budget: BudgetInfo): boolean {
+  return budget.fiveHour !== null || budget.oneWeek !== null;
 }

@@ -47,8 +47,14 @@ interface CodexSessionEvent {
 }
 
 interface CodexRateLimitSnapshot {
-  primary?: { used_percent?: number; window_minutes?: number | null };
-  secondary?: { used_percent?: number; window_minutes?: number | null };
+  primary?: CodexRateLimitWindow;
+  secondary?: CodexRateLimitWindow;
+}
+
+interface CodexRateLimitWindow {
+  used_percent?: number;
+  window_minutes?: number | null;
+  resets_at?: number | string | null;
 }
 
 /** Shape of the OpenAI usage API response (legacy dashboard endpoint). */
@@ -329,7 +335,7 @@ export function parseCodexRateLimitsFromRollout(raw: string, fallbackTimestamp?:
       if (!snapshot) continue;
 
       const windows = [snapshot.primary, snapshot.secondary]
-        .filter((window): window is { used_percent?: number; window_minutes?: number | null } => Boolean(window))
+        .filter((window): window is CodexRateLimitWindow => Boolean(window))
         .filter((window) => typeof window.window_minutes === 'number');
 
       if (windows.length === 0) continue;
@@ -350,10 +356,10 @@ export function parseCodexRateLimitsFromRollout(raw: string, fallbackTimestamp?:
 }
 
 function pickRateLimitWindow(
-  windows: Array<{ used_percent?: number; window_minutes?: number | null }>,
+  windows: CodexRateLimitWindow[],
   targetMinutes: number
-): { used_percent?: number; window_minutes?: number | null } | null {
-  let best: { used_percent?: number; window_minutes?: number | null } | null = null;
+): CodexRateLimitWindow | null {
+  let best: CodexRateLimitWindow | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
   for (const window of windows) {
@@ -370,7 +376,7 @@ function pickRateLimitWindow(
 }
 
 function toPercentPeriod(
-  window: { used_percent?: number; window_minutes?: number | null } | null,
+  window: CodexRateLimitWindow | null,
   snapshotTimestamp?: Date
 ): UsagePeriod | null {
   if (!window || typeof window.used_percent !== 'number') {
@@ -397,7 +403,8 @@ function toPercentPeriod(
       return null;
     }
 
-    const resetsAt = new Date(snapshotTimestamp.getTime() + windowMs);
+    const resetsAt = parseResetTimestamp(window.resets_at)
+      ?? new Date(snapshotTimestamp.getTime() + windowMs);
     return { used: window.used_percent, limit: 100, unit: 'percent', resetsAt };
   }
 
@@ -412,5 +419,19 @@ function parseEventTimestamp(value: string | number | undefined): Date | undefin
   if (Number.isNaN(date.getTime())) {
     return undefined;
   }
+  return date;
+}
+
+function parseResetTimestamp(value: string | number | null | undefined): Date | undefined {
+  if (value === undefined || value === null) return undefined;
+
+  const date = typeof value === 'number'
+    ? new Date(value * 1000)
+    : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
   return date;
 }
