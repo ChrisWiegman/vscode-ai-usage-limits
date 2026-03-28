@@ -46,26 +46,24 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "test": "node ./out/test/runTests.js",
-    "lint": "eslint src test"
+    "lint": "biome lint src test"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@biomejs/biome": "^2.4.9",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.5.0",
     "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.110.0",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
     "changie": "^1.24.0",
-    "eslint": "^10.1.0",
     "mocha": "^11.7.5",
     "sinon": "^21.0.3",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.1",
-    "@vscode/vsce": "^3.7.1"
+    "typescript": "^6.0.2"
   },
   "overrides": {
     "diff": "^8.0.3",
     "glob": "^13.0.6",
-    "serialize-javascript": "^7.0.4"
+    "serialize-javascript": "^7.0.5"
   }
 }
