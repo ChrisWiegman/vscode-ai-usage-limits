@@ -64,6 +64,7 @@
   "overrides": {
     "diff": "^8.0.4",
     "glob": "^13.0.6",
+    "encoding-sniffer": "^1.0.2",
     "serialize-javascript": "^7.0.5"
   }
 }
