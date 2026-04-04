@@ -1,6 +1,7 @@
 NPM := npm
 NPX := npx
 VSCE := node_modules/.bin/vsce
+ARGS = `arg="$(filter-out $@,$(MAKECMDGOALS))" && echo $${arg:-${1}}`
 
 .PHONY: install
 install:
