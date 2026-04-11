@@ -43,10 +43,10 @@ suite('StatusBarManager', () => {
     assert.ok(claudeItem.hidden, 'item should be hidden');
   });
 
-  test('shows sign-in prompt when Claude is not authenticated', () => {
+  test('shows login prompt when Claude is not authenticated', () => {
     manager.updateClaude({ available: true, authenticated: false, budget: null, error: null });
     assert.ok(!claudeItem.hidden);
-    assert.ok(claudeItem.text.includes('sign in'), `expected "sign in" in "${claudeItem.text}"`);
+    assert.ok(claudeItem.text.includes('Please log in'), `expected "Please log in" in "${claudeItem.text}"`);
     assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
     assert.strictEqual(claudeItem.command, 'ai-limits.openClaudeSettings');
   });
@@ -70,8 +70,8 @@ suite('StatusBarManager', () => {
       },
     });
     assert.ok(!claudeItem.hidden);
-    assert.ok(claudeItem.text.includes('0.12'), `"5h" cost in "${claudeItem.text}"`);
-    assert.ok(claudeItem.text.includes('1.57'), `"7d" cost in "${claudeItem.text}"`);
+    assert.ok(claudeItem.text.includes('5h: $0.12'), `"5h" cost in "${claudeItem.text}"`);
+    assert.ok(claudeItem.text.includes('7d: $1.57'), `"7d" cost in "${claudeItem.text}"`);
     assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
     assert.strictEqual(claudeItem.command, 'ai-limits.openClaudeSettings');
   });
@@ -83,7 +83,7 @@ suite('StatusBarManager', () => {
     assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
   });
 
-  test('shows unavailable state when both budget windows are missing', () => {
+  test('shows no-usage-yet state when both budget windows are missing', () => {
     manager.updateClaude({
       available: true,
       authenticated: true,
@@ -91,10 +91,10 @@ suite('StatusBarManager', () => {
       error: null,
     });
     assert.ok(!claudeItem.hidden);
-    assert.ok(claudeItem.text.includes('unavailable'), `expected "unavailable" in "${claudeItem.text}"`);
+    assert.ok(claudeItem.text.includes('No usage yet'), `expected "No usage yet" in "${claudeItem.text}"`);
     assert.ok(!claudeItem.text.includes('Claude'), `did not expect full label in "${claudeItem.text}"`);
     const tooltip = tooltipValue(claudeItem.tooltip);
-    assert.ok(tooltip.includes('Usage data is currently unavailable'), `unexpected tooltip: ${tooltip}`);
+    assert.ok(tooltip.includes('No usage has been recorded yet'), `unexpected tooltip: ${tooltip}`);
   });
 
   // -------------------------------------------------------------------------
@@ -117,8 +117,8 @@ suite('StatusBarManager', () => {
       },
     });
     assert.ok(!openaiItem.hidden);
-    assert.ok(openaiItem.text.includes('0.05'), `5h cost in "${openaiItem.text}"`);
-    assert.ok(openaiItem.text.includes('3.00'), `7d cost in "${openaiItem.text}"`);
+    assert.ok(openaiItem.text.includes('5h: $0.05'), `5h cost in "${openaiItem.text}"`);
+    assert.ok(openaiItem.text.includes('7d: $3.00'), `7d cost in "${openaiItem.text}"`);
     assert.ok(!openaiItem.text.includes('Codex'), `did not expect full label in "${openaiItem.text}"`);
     assert.strictEqual(openaiItem.command, 'ai-limits.openOpenAISettings');
   });
@@ -133,8 +133,8 @@ suite('StatusBarManager', () => {
         oneWeek: { used: 13, limit: 100, unit: 'percent' },
       },
     });
-    assert.ok(openaiItem.text.includes('5h:3%'), `5h percent in "${openaiItem.text}"`);
-    assert.ok(openaiItem.text.includes('7d:13%'), `7d percent in "${openaiItem.text}"`);
+    assert.ok(openaiItem.text.includes('5h: 3%'), `5h percent in "${openaiItem.text}"`);
+    assert.ok(openaiItem.text.includes('7d: 13%'), `7d percent in "${openaiItem.text}"`);
     assert.ok(!openaiItem.text.includes('Codex'), `did not expect full label in "${openaiItem.text}"`);
   });
 

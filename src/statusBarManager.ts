@@ -61,7 +61,7 @@ export class StatusBarManager implements vscode.Disposable {
 
   private buildText(icon: string, status: ProviderStatus): string {
     if (!status.authenticated) {
-      return `${icon} sign in`;
+      return `${icon} Please log in`;
     }
     if (status.error) {
       return `${icon} error`;
@@ -70,16 +70,16 @@ export class StatusBarManager implements vscode.Disposable {
       return `${icon} ...`;
     }
     if (!hasUsableBudget(status)) {
-      return `${icon} unavailable`;
+      return `${icon} No usage yet`;
     }
 
     const parts: string[] = [icon];
 
     if (status.budget.fiveHour !== null) {
-      parts.push(`5h:${this.formatCompact(status.budget.fiveHour)}`);
+      parts.push(`5h: ${this.formatCompact(status.budget.fiveHour)}`);
     }
     if (status.budget.oneWeek !== null) {
-      parts.push(`7d:${this.formatCompact(status.budget.oneWeek)}`);
+      parts.push(`7d: ${this.formatCompact(status.budget.oneWeek)}`);
     }
 
     return parts.join(' ');
@@ -90,7 +90,7 @@ export class StatusBarManager implements vscode.Disposable {
     md.isTrusted = false;
 
     if (!status.authenticated) {
-      md.appendMarkdown(`**${label}**: Please sign in via the companion extension.`);
+      md.appendMarkdown(`**${label}**: Please log in via the companion extension.`);
       return md;
     }
     if (status.error) {
@@ -102,7 +102,7 @@ export class StatusBarManager implements vscode.Disposable {
       return md;
     }
     if (!hasUsableBudget(status)) {
-      md.appendMarkdown(`**${label}**: Usage data is currently unavailable.\n\n`);
+      md.appendMarkdown(`**${label}**: No usage has been recorded yet.\n\n`);
       md.appendMarkdown(formatRefreshInfo(this.lastRefreshed, this.nextRefreshAt));
       return md;
     }
