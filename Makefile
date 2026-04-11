@@ -25,7 +25,7 @@ test:
 
 .PHONY: package
 package:
-	rm *.vsix
+	rm -f *.vsix
 	$(VSCE) package
 
 .PHONY: clean
