@@ -1,3 +1,0 @@
-kind: Chores
-body: Refresh the README so it matches the current extension behavior, including the visible logged-out state, the `No usage yet` state, percentage-based OAuth modes, and the updated manual testing guidance.
-time: 2026-04-11T09:02:29.292498-05:00

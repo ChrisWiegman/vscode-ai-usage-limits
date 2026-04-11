@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: 'Show `Please log in` for installed but unauthenticated providers, replace the generic unavailable state with `No usage yet` when no usage windows have started, and add spacing after 5h:/7d: values in the status bar.'
-time: 2026-04-11T09:02:26.287409-05:00

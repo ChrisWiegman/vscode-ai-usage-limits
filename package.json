@@ -2,7 +2,7 @@
   "name": "ai-usage-limits",
   "displayName": "AI Usage Limits",
   "description": "Shows Claude and Codex usage budgets in the VS Code status bar using existing extension logins",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "chriswiegman",
   "license": "MIT",
   "repository": {
