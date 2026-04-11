@@ -7,6 +7,8 @@ import { ClaudeProvider } from '../../src/providers/claudeProvider';
 import { OpenAIProvider } from '../../src/providers/openaiProvider';
 import { ProviderStatus } from '../../src/types';
 
+const noop = (): void => undefined;
+
 suite('extension activation', () => {
   let sandbox: sinon.SinonSandbox;
   let fakeClock: sinon.SinonFakeTimers;
@@ -25,7 +27,6 @@ suite('extension activation', () => {
     fakeClock = sinon.useFakeTimers({
       now: new Date('2026-04-11T14:00:00.000Z'),
       shouldAdvanceTime: false,
-      shouldClearNativeTimers: true,
     });
 
     output = new FakeOutputChannel();
@@ -48,11 +49,11 @@ suite('extension activation', () => {
     sandbox.stub(vscode.window, 'createStatusBarItem').returns(new FakeStatusBarItem() as unknown as vscode.StatusBarItem);
     sandbox.stub(vscode.commands, 'registerCommand').callsFake((command, callback) => {
       commandHandlers.set(command, callback as () => unknown);
-      return { dispose() {} };
+      return { dispose: noop };
     });
     sandbox.stub(vscode.env, 'openExternal').resolves(true);
-    sandbox.stub(vscode.extensions, 'onDidChange').returns({ dispose() {} });
-    sandbox.stub(vscode.authentication, 'onDidChangeSessions').returns({ dispose() {} });
+    sandbox.stub(vscode.extensions, 'onDidChange').returns({ dispose: noop });
+    sandbox.stub(vscode.authentication, 'onDidChangeSessions').returns({ dispose: noop });
 
     getClaudeStatusStub = sandbox.stub(ClaudeProvider.prototype, 'getStatus').callsFake(async () => claudeStatus);
     getOpenAIStatusStub = sandbox.stub(OpenAIProvider.prototype, 'getStatus').callsFake(async () => openaiStatus);
@@ -113,7 +114,6 @@ suite('extension activation', () => {
 
   test('records refresh timing during activation', async () => {
     await extensionModule.activate(fakeContext());
-
     assert.strictEqual(setRefreshInfoStub.callCount, 1);
     const [last, next] = setRefreshInfoStub.firstCall.args as [Date, Date];
     assert.strictEqual(next.getTime() - last.getTime(), 5 * 60 * 1000);
@@ -158,7 +158,7 @@ class FakeOutputChannel {
     this.showCallCount += 1;
   }
 
-  dispose(): void {}
+  dispose = noop;
 }
 
 class FakeStatusBarItem {
@@ -166,7 +166,7 @@ class FakeStatusBarItem {
   tooltip: string | vscode.MarkdownString = '';
   command: string | vscode.Command | undefined;
 
-  show(): void {}
-  hide(): void {}
-  dispose(): void {}
+  show = noop;
+  hide = noop;
+  dispose = noop;
 }
