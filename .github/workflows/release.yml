@@ -26,6 +26,11 @@ jobs:
         id: vars
         run: |
             TAG_NAME="${GITHUB_REF#refs/tags/}"
+            PKG_VERSION=$(node -p "require('./package.json').version")
+            if [ "$TAG_NAME" != "$PKG_VERSION" ]; then
+              echo "Tag $TAG_NAME does not match package.json version $PKG_VERSION"
+              exit 1
+            fi
             echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
