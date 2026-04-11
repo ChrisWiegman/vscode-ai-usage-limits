@@ -22,7 +22,7 @@
     "package.json"
   ],
   "engines": {
-    "vscode": "^1.110.0"
+    "vscode": "^1.115.0"
   },
   "categories": [
     "Other"
@@ -49,16 +49,16 @@
     "lint": "biome lint src test"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.10",
+    "@biomejs/biome": "^2.4.11",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^25.5.2",
+    "@types/node": "^25.6.0",
     "@types/sinon": "^21.0.1",
-    "@types/vscode": "^1.110.0",
+    "@types/vscode": "^1.115.0",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.7.1",
     "changie": "^1.24.0",
     "mocha": "^11.7.5",
-    "sinon": "^21.0.3",
+    "sinon": "^21.1.1",
     "typescript": "^6.0.2"
   },
   "overrides": {
