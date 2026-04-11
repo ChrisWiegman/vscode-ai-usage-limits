@@ -138,6 +138,22 @@ suite('StatusBarManager', () => {
     assert.ok(!openaiItem.text.includes('Codex'), `did not expect full label in "${openaiItem.text}"`);
   });
 
+  test('shows whichever budget window is available without falling back to no-usage', () => {
+    manager.updateOpenAI({
+      available: true,
+      authenticated: true,
+      error: null,
+      budget: {
+        fiveHour: null,
+        oneWeek: { used: 13, limit: 100, unit: 'percent' },
+      },
+    });
+    assert.ok(!openaiItem.hidden);
+    assert.ok(!openaiItem.text.includes('No usage yet'), `did not expect no-usage in "${openaiItem.text}"`);
+    assert.ok(!openaiItem.text.includes('5h:'), `did not expect 5h window in "${openaiItem.text}"`);
+    assert.ok(openaiItem.text.includes('7d: 13%'), `expected 7d window in "${openaiItem.text}"`);
+  });
+
   test('tooltip shows reset time when resetsAt is provided', () => {
     const resetsAt = new Date(Date.now() + 2 * 60 * 60 * 1000 + 15 * 60 * 1000); // 2h 15m from now
     manager.updateClaude({
@@ -166,6 +182,20 @@ suite('StatusBarManager', () => {
     });
     const tooltip = tooltipValue(claudeItem.tooltip);
     assert.ok(!tooltip.includes('Resets:'), `unexpected "Resets:" in tooltip: ${tooltip}`);
+  });
+
+  test('tooltips remain untrusted markdown', () => {
+    manager.updateClaude({
+      available: true,
+      authenticated: true,
+      error: null,
+      budget: {
+        fiveHour: { used: 0.5, limit: 10 },
+        oneWeek: null,
+      },
+    });
+    assert.ok(claudeItem.tooltip instanceof vscode.MarkdownString);
+    assert.strictEqual((claudeItem.tooltip as vscode.MarkdownString).isTrusted, false);
   });
 
   // -------------------------------------------------------------------------
