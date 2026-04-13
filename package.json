@@ -58,11 +58,11 @@
     "@vscode/vsce": "^3.7.1",
     "changie": "^1.24.0",
     "mocha": "^11.7.5",
-    "sinon": "^21.1.1",
+    "sinon": "^21.1.2",
     "typescript": "^6.0.2"
   },
   "overrides": {
-    "diff": "^8.0.4",
+    "diff": "^9.0.0",
     "glob": "^13.0.6",
     "encoding-sniffer": "^1.0.2",
     "serialize-javascript": "^7.0.5"
