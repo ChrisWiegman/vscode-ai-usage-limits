@@ -1,17 +1,19 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import fs = require('fs');
-import { readCache, writeCache, tokenKey, CACHE_TTL_MS, CACHE_PATH } from '../../src/sharedCache';
+import { readCache, writeCache, clearCache, tokenKey, CACHE_TTL_MS, CACHE_PATH } from '../../src/sharedCache';
 
 suite('sharedCache', () => {
   let readFileSyncStub: sinon.SinonStub;
   let writeFileSyncStub: sinon.SinonStub;
   let mkdirSyncStub: sinon.SinonStub;
+  let unlinkSyncStub: sinon.SinonStub;
 
   setup(() => {
     readFileSyncStub = sinon.stub(fs, 'readFileSync');
     writeFileSyncStub = sinon.stub(fs, 'writeFileSync');
     mkdirSyncStub = sinon.stub(fs, 'mkdirSync');
+    unlinkSyncStub = sinon.stub(fs, 'unlinkSync');
   });
 
   teardown(() => {
@@ -171,5 +173,28 @@ suite('sharedCache', () => {
 
     assert.strictEqual(mkdirSyncStub.called, false);
     assert.strictEqual(writeFileSyncStub.called, false);
+  });
+
+  // -------------------------------------------------------------------------
+  // clearCache
+  // -------------------------------------------------------------------------
+
+  test('deletes the cache file at CACHE_PATH', () => {
+    clearCache();
+
+    assert.ok(unlinkSyncStub.calledOnce);
+    assert.strictEqual(unlinkSyncStub.firstCall.args[0], CACHE_PATH);
+  });
+
+  test('does not throw when the cache file does not exist', () => {
+    unlinkSyncStub.throws(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+    assert.doesNotThrow(() => clearCache());
+  });
+
+  test('does not throw when unlinkSync fails for other reasons', () => {
+    unlinkSyncStub.throws(new Error('EACCES'));
+
+    assert.doesNotThrow(() => clearCache());
   });
 });
