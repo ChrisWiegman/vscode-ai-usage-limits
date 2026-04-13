@@ -7,6 +7,7 @@ A VS Code extension that shows your **Claude** and **Codex** usage in the status
 - **Claude budget** – powered by the [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) extension login
 - **Codex budget** – powered by the [ChatGPT](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) extension login
 - **Quick jump to account settings** – click either status bar meter to open that service's settings page
+- **Manual refresh** – run `AI Limits: Refresh Now` from the Command Palette to clear the cache and fetch immediately
 - Shows **last 5 hours** and **last 7 days** in the status bar
 - Displays **USD spend** for API-key based accounts and **percentage utilization** for OAuth/session-based accounts
 - Shows clear states for **Please log in**, **loading**, **No usage yet**, and **error**
@@ -63,6 +64,7 @@ Clicking a status bar item opens the corresponding usage/settings page in your b
    - `No usage yet` when both usage windows are currently empty or unavailable
    - Usage values when at least one window is available
 5. Results are cached by token, refreshed every 5 minutes, and refreshed again when VS Code reports extension or authentication changes.
+6. Run **AI Limits: Refresh Now** from the Command Palette at any time to clear the cache and trigger an immediate fetch.
 
 ## Known Limitations
 
