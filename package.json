@@ -16,7 +16,7 @@
   "icon": "assets/icon.png",
   "files": [
     "assets/icon.png",
-    "out/**",
+    "out/src/**/*.js",
     "README.md",
     "LICENSE.txt",
     "package.json"
