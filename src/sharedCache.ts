@@ -77,6 +77,16 @@ export function readCache(key: string): BudgetInfo | null {
   }
 }
 
+/** Removes the shared cache file so the next fetch is forced to hit the API.
+ *  Failures are silently swallowed — the cache is best-effort. */
+export function clearCache(): void {
+  try {
+    fs.unlinkSync(CACHE_PATH);
+  } catch {
+    // Deletion failure is non-fatal.
+  }
+}
+
 /** Persists budget data to the shared cache file.  Failures are silently
  *  swallowed — the extension continues to work without cross-window dedup. */
 export function writeCache(key: string, budget: BudgetInfo): void {
