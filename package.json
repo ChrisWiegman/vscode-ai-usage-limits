@@ -55,23 +55,22 @@
     "test": "node ./out/test/runTests.js",
     "lint": "biome lint src test"
   },
+  "overrides": {
+    "diff": "^9.0.0",
+    "serialize-javascript": "^7.0.5",
+    "uuid": "^14.0.0"
+  },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.12",
+    "@biomejs/biome": "^2.4.13",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.6.0",
     "@types/sinon": "^21.0.1",
     "@types/vscode": "^1.116.0",
     "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.9.0",
+    "@vscode/vsce": "^3.9.1",
     "changie": "^1.24.0",
     "mocha": "^11.7.5",
     "sinon": "^21.1.2",
     "typescript": "^6.0.3"
-  },
-  "overrides": {
-    "diff": "^9.0.0",
-    "glob": "^13.0.6",
-    "encoding-sniffer": "^1.0.2",
-    "serialize-javascript": "^7.0.5"
   }
 }
