@@ -315,11 +315,7 @@ function extractOAuthUsagePeriod(window: ClaudeOAuthUsageWindow | undefined): Us
     return null;
   }
 
-  // Some APIs return 0-1, others return 0-100. Normalize to percent.
-  const raw = window.utilization;
-  const used = raw <= 1 ? raw * 100 : raw;
-
-  const period: UsagePeriod = { used, limit: 100, unit: 'percent' };
+  const period: UsagePeriod = { used: window.utilization, limit: 100, unit: 'percent' };
   if (window.resets_at) {
     const resetsAt = new Date(window.resets_at);
     if (!Number.isNaN(resetsAt.getTime())) {

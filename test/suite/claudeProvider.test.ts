@@ -143,6 +143,43 @@ suite('ClaudeProvider', () => {
     assert.strictEqual(budget.oneWeek!.resetsAt, undefined);
   });
 
+  test('treats utilization of 1 as 1% not 100% (regression: normalization bug)', async () => {
+    fetchStub.resolves(fakeResponse({
+      five_hour: { utilization: 1 },
+      seven_day: { utilization: 8 },
+    }));
+
+    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    assert.ok(budget.fiveHour !== null);
+    assert.strictEqual(budget.fiveHour!.used, 1);
+    assert.strictEqual(budget.fiveHour!.unit, 'percent');
+    assert.strictEqual(budget.oneWeek!.used, 8);
+  });
+
+  test('treats utilization of 0 as 0% usage', async () => {
+    fetchStub.resolves(fakeResponse({
+      five_hour: { utilization: 0 },
+      seven_day: { utilization: 0 },
+    }));
+
+    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    assert.ok(budget.fiveHour !== null);
+    assert.strictEqual(budget.fiveHour!.used, 0);
+    assert.strictEqual(budget.fiveHour!.unit, 'percent');
+  });
+
+  test('returns null period when utilization is null', async () => {
+    fetchStub.resolves(fakeResponse({
+      five_hour: { utilization: null },
+      seven_day: { utilization: 42 },
+    }));
+
+    const budget = await provider.fetchBudget('sk-ant-oat01-test');
+    assert.strictEqual(budget.fiveHour, null);
+    assert.ok(budget.oneWeek !== null);
+    assert.strictEqual(budget.oneWeek!.used, 42);
+  });
+
   test('falls back to local Claude project JSONL when usage API is unavailable', async () => {
     fetchStub.resolves(fakeResponse({ error: 'forbidden' }, 403));
     existsSyncStub.returns(true);
