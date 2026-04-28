@@ -27,10 +27,10 @@ Install at least one of the companion extensions and sign in:
 If an installed companion extension is not authenticated, the item stays visible and shows `Please log in`.
 If neither companion extension is installed, the extension activates silently with no UI impact.
 
-## Status Bar Format
+## Status bar Format
 
 ```
-✳ 5h: $0.12 7d: $1.45   ◎ 5h: 3% 7d: 13%
+✳ 5h: 80% 7d: 14%   ◎ 5h: 3% 7d: 13%
 ```
 
 Examples of the compact states:
@@ -41,7 +41,7 @@ Examples of the compact states:
 | Loading | `✳ ...` |
 | No usage in either window yet | `✳ No usage yet` |
 | Error | `✳ error` |
-| Usage available | `✳ 5h: $0.12 7d: $1.45` or `◎ 5h: 3% 7d: 13%` |
+| Usage available | `✳ 5h: 80% 7d: 14%   ◎ 5h: 3% 7d: 13%` |
 
 Hover over an item for a detailed tooltip with exact figures, reset times when known, and refresh timing.
 
@@ -68,21 +68,21 @@ Clicking a status bar item opens the corresponding usage/settings page in your b
 
 ## Known Limitations
 
-### Claude fallback behavior
+### Claude Fallback Behavior
 
 When the Claude APIs do not provide usable usage data, the extension falls back to local Claude project JSONL files where possible. This fallback can estimate USD usage for API-key based workflows, but it does not help OAuth percentage mode when no percentage snapshot is available.
 
-### 5-hour window (OpenAI API key mode)
+### 5-Hour Window (OpenAI API Key Mode)
 
 OpenAI's usage endpoint returns data aggregated by UTC calendar day. The 5-hour figure is pro-rated from today's usage based on the elapsed fraction of the day, so it is an approximation.
 
-### OAuth and session-based modes
+### OAuth and Session-Based Modes
 
 When authenticated through Claude OAuth or ChatGPT/Codex OAuth, the extension shows **percentage utilization** for the 5-hour and 7-day windows instead of USD spend.
 
 For Codex, those percentages come from the latest local rollout snapshot. Older snapshots are intentionally ignored once they are too stale, so the UI may show `No usage yet` rather than a misleading old value.
 
-### Trusted-domain prompts
+### Trusted-Domain Prompts
 
 When you click a status bar item, the extension uses VS Code's standard external-link handling to open the service's usage page. VS Code may ask you to trust `https://claude.ai` and `https://chatgpt.com` before opening them. This trust list is controlled by VS Code rather than by the extension, so the prompt cannot be suppressed automatically.
 
@@ -91,7 +91,7 @@ If you want to stop seeing that warning, run `Trusted Domains: Manage Trusted Do
 - `https://claude.ai`
 - `https://chatgpt.com`
 
-### Cost estimation
+### Cost Estimation
 
 When the API response does not include a pre-computed cost field, costs are estimated using hardcoded list pricing:
 
