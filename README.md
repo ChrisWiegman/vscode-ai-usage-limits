@@ -57,9 +57,10 @@ Clicking a status bar item opens the corresponding usage/settings page in your b
    - **Claude API key auth**: `GET https://api.anthropic.com/v1/usage` with `start_time` / `end_time`
    - **Claude OAuth auth**: `GET https://api.anthropic.com/api/oauth/usage` for 5-hour and 7-day utilization percentages
    - **OpenAI API key auth**: `GET https://api.openai.com/v1/usage?date=YYYY-MM-DD` plus `GET /v1/dashboard/billing/subscription`
-   - **Codex ChatGPT OAuth auth**: reads the latest local Codex session rollout (`~/.codex/sessions/**/rollout-*.jsonl`) and uses the embedded `rate_limits` snapshot (`300` minute and `10080` minute windows)
-4. The status bar renders one of four compact states per provider:
+   - **Codex ChatGPT OAuth auth**: searches `~/.codex/sessions/` recursively for the most recently modified `.jsonl` file and uses the embedded `rate_limits` snapshot (`300` minute and `10080` minute windows)
+4. The status bar renders one of five compact states per provider (checked in this order):
    - `Please log in` when the companion extension is installed but no usable credentials are found
+   - `error` when credentials were found but the data fetch failed
    - `...` while data is being loaded
    - `No usage yet` when both usage windows are currently empty or unavailable
    - Usage values when at least one window is available
@@ -95,12 +96,12 @@ If you want to stop seeing that warning, run `Trusted Domains: Manage Trusted Do
 
 When the API response does not include a pre-computed cost field, costs are estimated using hardcoded list pricing:
 
-| Service | Model assumed | Input | Output |
-|---------|--------------|-------|--------|
-| Anthropic | Claude 3.5 Sonnet | $3 / 1M tokens | $15 / 1M tokens |
-| OpenAI | GPT-4o | $5 / 1M tokens | $15 / 1M tokens |
+| Service | Model assumed | Input | Output | Cache write | Cache read |
+|---------|--------------|-------|--------|-------------|------------|
+| Anthropic | Claude 3.5 Sonnet | $3 / 1M | $15 / 1M | $3.75 / 1M | $0.30 / 1M |
+| OpenAI | GPT-4o | $5 / 1M | $15 / 1M | — | — |
 
-Actual costs may differ if you use other models or have negotiated pricing.
+Cache pricing applies only to the Anthropic JSONL local-file fallback path. Actual costs may differ if you use other models or have negotiated pricing.
 
 ## Testing
 
@@ -136,15 +137,19 @@ src/
   extension.ts          Entry point; wires providers, status bar, and refresh timer
   types.ts              Shared TypeScript interfaces
   statusBarManager.ts   Creates and updates the two status bar items
+  fetchWithRetry.ts     Fetch wrapper with retry/back-off logic
+  sharedCache.ts        In-memory cache keyed by token hash
   providers/
     claudeProvider.ts   Reads Claude credentials, then uses API and local fallbacks
-    openaiProvider.ts   Reads Codex credentials, then uses API or rollout snapshots
+    openaiProvider.ts   Reads Codex credentials, then uses API or session snapshots
 test/
   runTests.ts           Launches the VS Code Extension Development Host test runner
   suite/
     index.ts            Mocha suite loader
+    extension.test.ts
     claudeProvider.test.ts
     openaiProvider.test.ts
+    sharedCache.test.ts
     statusBarManager.test.ts
 ```
 
