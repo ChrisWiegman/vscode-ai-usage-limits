@@ -18,10 +18,12 @@ export class StatusBarManager implements vscode.Disposable {
     this.errorCommand = errorCommand;
     this.claudeCommand = claudeCommand;
     this.openaiCommand = openaiCommand;
+
     this.claudeItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right,
       100
     );
+
     this.openaiItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right,
       99
@@ -56,6 +58,7 @@ export class StatusBarManager implements vscode.Disposable {
     item.text = this.buildText(icon, status);
     item.tooltip = this.buildTooltip(label, status);
     item.command = status.error ? this.errorCommand : defaultCommand;
+
     item.show();
   }
 
@@ -63,12 +66,15 @@ export class StatusBarManager implements vscode.Disposable {
     if (!status.authenticated) {
       return `${icon} Please log in`;
     }
+
     if (status.error) {
       return `${icon} error`;
     }
+
     if (!status.budget) {
       return `${icon} ...`;
     }
+
     if (!hasUsableBudget(status)) {
       return `${icon} No usage yet`;
     }
@@ -78,6 +84,7 @@ export class StatusBarManager implements vscode.Disposable {
     if (status.budget.fiveHour !== null) {
       parts.push(`5h: ${this.formatCompact(status.budget.fiveHour)}`);
     }
+
     if (status.budget.oneWeek !== null) {
       parts.push(`7d: ${this.formatCompact(status.budget.oneWeek)}`);
     }
@@ -87,23 +94,28 @@ export class StatusBarManager implements vscode.Disposable {
 
   private buildTooltip(label: string, status: ProviderStatus): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
+
     md.isTrusted = false;
 
     if (!status.authenticated) {
       md.appendMarkdown(`**${label}**: Please log in via the companion extension.`);
       return md;
     }
+
     if (status.error) {
       md.appendMarkdown(`**${label} error:** ${escapeMarkdown(status.error)}`);
       return md;
     }
+
     if (!status.budget) {
       md.appendMarkdown(`**${label}**: Fetching usage…`);
       return md;
     }
+
     if (!hasUsableBudget(status)) {
       md.appendMarkdown(`**${label}**: No usage has been recorded yet.\n\n`);
       md.appendMarkdown(formatRefreshInfo(this.lastRefreshed, this.nextRefreshAt));
+
       return md;
     }
 
@@ -112,6 +124,7 @@ export class StatusBarManager implements vscode.Disposable {
     if (status.budget.fiveHour !== null) {
       const value = this.formatDetailed(status.budget.fiveHour);
       const reset = formatResetTime(status.budget.fiveHour.resetsAt);
+
       md.appendMarkdown(`**Last 5 hours:** ${value}\n\n${reset}`);
     } else {
       md.appendMarkdown(`**Last 5 hours:** unavailable\n\n`);
@@ -120,6 +133,7 @@ export class StatusBarManager implements vscode.Disposable {
     if (status.budget.oneWeek !== null) {
       const value = this.formatDetailed(status.budget.oneWeek);
       const reset = formatResetTime(status.budget.oneWeek.resetsAt);
+
       md.appendMarkdown(`**Last 7 days:** ${value}\n\n${reset}`);
     } else {
       md.appendMarkdown(`**Last 7 days:** unavailable\n\n`);
@@ -134,6 +148,7 @@ export class StatusBarManager implements vscode.Disposable {
     if (period.unit === 'percent') {
       return `${period.used.toFixed(0)}%`;
     }
+
     return `${DOLLAR}${period.used.toFixed(2)}`;
   }
 
@@ -142,7 +157,9 @@ export class StatusBarManager implements vscode.Disposable {
       const limit = period.limit !== null ? `/${period.limit.toFixed(0)}%` : '';
       return `${period.used.toFixed(1)}%${limit}`;
     }
+
     const limit = period.limit !== null ? `/${DOLLAR}${period.limit.toFixed(2)}` : '';
+
     return `${DOLLAR}${period.used.toFixed(4)}${limit}`;
   }
 
@@ -154,8 +171,8 @@ export class StatusBarManager implements vscode.Disposable {
 
 function formatRefreshInfo(last: Date | undefined, next: Date | undefined): string {
   if (!last) return '';
-  const now = Date.now();
 
+  const now = Date.now();
   const agoMs = now - last.getTime();
   const agoMin = Math.floor(agoMs / 60_000);
   const agoText = agoMin < 1 ? 'just now' : `${agoMin}m ago`;
@@ -186,6 +203,7 @@ function formatResetTime(resetsAt: Date | undefined): string {
   const diff = resetsAt.getTime() - now;
 
   let relative: string;
+
   if (diff <= 0) {
     relative = 'soon';
   } else {
@@ -193,6 +211,7 @@ function formatResetTime(resetsAt: Date | undefined): string {
     const days = Math.floor(totalMinutes / 1440);
     const hours = Math.floor((totalMinutes % 1440) / 60);
     const minutes = totalMinutes % 60;
+
     if (days > 0) {
       relative = `in ${days}d ${hours}h`;
     } else if (hours > 0) {

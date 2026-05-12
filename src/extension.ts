@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { StatusBarManager } from './statusBarManager';
 import { ClaudeProvider } from './providers/claudeProvider';
 import { OpenAIProvider } from './providers/openaiProvider';
 import { clearCache } from './sharedCache';
+import { StatusBarManager } from './statusBarManager';
 
 /** How often (ms) to poll for updated budget information. */
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -36,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
     vscode.commands.registerCommand(REFRESH_COMMAND, () => {
       clearCache();
+
       void refresh();
     })
   );
@@ -55,15 +56,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       : { available: true, authenticated: false, budget: null, error: String(openaiResult.reason) };
 
     const now = new Date();
+
     statusBar.setRefreshInfo(now, new Date(now.getTime() + REFRESH_INTERVAL_MS));
     statusBar.updateClaude(claudeStatus);
     statusBar.updateOpenAI(openaiStatus);
 
     // Log errors to the output channel so they are always visible.
     const timestamp = new Date().toLocaleTimeString();
+
     if (claudeStatus.error) {
       output.appendLine(`[${timestamp}] Claude error: ${claudeStatus.error}`);
     }
+
     if (openaiStatus.error) {
       output.appendLine(`[${timestamp}] Codex error: ${openaiStatus.error}`);
     }
@@ -74,15 +78,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Periodic refresh
   const timer = setInterval(() => { void refresh(); }, REFRESH_INTERVAL_MS);
+
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
 
   // Debounced refresh for event-driven triggers to avoid back-to-back API
   // bursts (e.g. the extension's own installation fires onDidChange).
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
   const debouncedRefresh = (): void => {
     if (debounceTimer !== undefined) {
       clearTimeout(debounceTimer);
     }
+    
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
       void refresh();

@@ -63,14 +63,19 @@ export function readCache(key: string): BudgetInfo | null {
     const raw = fs.readFileSync(CACHE_PATH, 'utf8');
     const file = JSON.parse(raw) as CacheFile;
     const entry = file[key];
+
     if (!entry?.fetchedAt || !entry.budget) {
       return null;
     }
+
     const age = Date.now() - new Date(entry.fetchedAt).getTime();
+
     if (age > CACHE_TTL_MS) {
       return null;
     }
+
     const budget = deserializeBudget(entry.budget);
+
     return hasUsableBudget(budget) ? budget : null;
   } catch {
     return null;
@@ -96,14 +101,19 @@ export function writeCache(key: string, budget: BudgetInfo): void {
 
   try {
     let file: CacheFile = {};
+
     try {
       const raw = fs.readFileSync(CACHE_PATH, 'utf8');
+
       file = JSON.parse(raw) as CacheFile;
     } catch {
       // File absent or corrupt — start fresh.
     }
+
     fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
+
     file[key] = { fetchedAt: new Date().toISOString(), budget: serializeBudget(budget) };
+
     fs.writeFileSync(CACHE_PATH, JSON.stringify(file), 'utf8');
   } catch {
     // Cache write failure is non-fatal.
@@ -120,12 +130,15 @@ function serializePeriod(p: UsagePeriod): SerializedPeriod {
 
 function deserializePeriod(p: SerializedPeriod): UsagePeriod {
   const period: UsagePeriod = { used: p.used, limit: p.limit, unit: p.unit };
+
   if (p.resetsAt) {
     const d = new Date(p.resetsAt);
+
     if (!Number.isNaN(d.getTime())) {
       period.resetsAt = d;
     }
   }
+
   return period;
 }
 

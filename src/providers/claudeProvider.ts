@@ -13,14 +13,14 @@
  * header (API key starting with "sk-ant-api") to call Anthropic's usage API.
  */
 
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
 import * as vscode from 'vscode';
-import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
 import { fetchWithRetry } from '../fetchWithRetry';
-import { readCache, writeCache, tokenKey } from '../sharedCache';
+import { readCache, tokenKey, writeCache } from '../sharedCache';
+import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
 
 const EXTENSION_ID = 'anthropic.claude-code';
 const API_BASE = 'https://api.anthropic.com';
@@ -78,15 +78,18 @@ export class ClaudeProvider {
     }
 
     const token = this.resolveToken();
+
     if (token === undefined) {
       return { available: true, authenticated: false, budget: null, error: null };
     }
 
     try {
       const budget = await this.fetchBudget(token);
+
       return { available: true, authenticated: true, budget, error: null };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
       return { available: true, authenticated: true, budget: null, error: message };
     }
   }
@@ -104,7 +107,9 @@ export class ClaudeProvider {
           `security find-generic-password -a "${account}" -w -s "${KEYCHAIN_SERVICE}"`,
           { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
         ).trim();
+
         const token = extractToken(raw);
+
         if (token) return token;
       } catch {
         // Keychain entry not found or access denied – fall through.
@@ -113,9 +118,11 @@ export class ClaudeProvider {
 
     // 2. File-based fallback: ~/.claude/.credentials.json
     const credFile = path.join(os.homedir(), '.claude', '.credentials.json');
+
     try {
       const raw = fs.readFileSync(credFile, 'utf8');
       const token = extractToken(raw);
+
       if (token) return token;
     } catch {
       // File absent or unreadable – fall through.
@@ -127,12 +134,15 @@ export class ClaudeProvider {
   async fetchBudget(accessToken: string): Promise<BudgetInfo> {
     const key = tokenKey(accessToken);
     const cached = readCache(key);
+
     if (cached !== null) {
       return cached;
     }
 
     const budget = await this.fetchFreshBudget(accessToken);
+
     writeCache(key, budget);
+
     return budget;
   }
 
@@ -157,6 +167,7 @@ export class ClaudeProvider {
 
     if (fiveHour === null && oneWeek === null) {
       const fallback = this.readBudgetFromClaudeProjects(fiveHoursAgo, oneWeekAgo, now);
+
       if (fallback) return fallback;
     }
 
@@ -188,6 +199,7 @@ export class ClaudeProvider {
     const data = (await response.json()) as ClaudeOAuthUsageResponse;
     const fiveHour = extractOAuthUsagePeriod(data.five_hour);
     const oneWeek = extractOAuthUsagePeriod(data.seven_day);
+
     if (fiveHour === null && oneWeek === null) {
       return null;
     }
@@ -201,9 +213,11 @@ export class ClaudeProvider {
     now: Date
   ): BudgetInfo | null {
     const projectRoot = path.join(os.homedir(), '.claude', 'projects');
+
     if (!fs.existsSync(projectRoot)) return null;
 
     const files = collectJsonlFiles(projectRoot);
+
     if (files.length === 0) return null;
 
     let fiveHourCost = 0;
@@ -212,6 +226,7 @@ export class ClaudeProvider {
 
     for (const file of files) {
       let raw: string;
+
       try {
         raw = fs.readFileSync(file, 'utf8');
       } catch {
@@ -219,6 +234,7 @@ export class ClaudeProvider {
       }
 
       const parsed = estimateClaudeUsageFromJsonl(raw, fiveHoursAgo, oneWeekAgo, now);
+
       fiveHourCost += parsed.fiveHour;
       oneWeekCost += parsed.oneWeek;
       sawUsage ||= parsed.sawUsage;
@@ -252,6 +268,7 @@ export class ClaudeProvider {
     }
 
     const data = (await response.json()) as AnthropicUsageResponse;
+
     return { used: extractAnthropicCost(data), limit: null };
   }
 }
@@ -277,12 +294,14 @@ export function extractToken(raw: string): string | undefined {
   } catch {
     // Not valid JSON – ignore.
   }
+
   return undefined;
 }
 
 function buildHeaders(token: string): Record<string, string> {
   // Direct API keys look like "sk-ant-api03-…"; OAuth tokens "sk-ant-oat01-…"
   const isApiKey = token.startsWith('sk-ant-api');
+
   return {
     'Content-Type': 'application/json',
     'anthropic-version': ANTHROPIC_VERSION,
@@ -296,17 +315,21 @@ function extractAnthropicCost(data: AnthropicUsageResponse): number {
   if (typeof data.total_cost === 'number') {
     return data.total_cost;
   }
+
   if (Array.isArray(data.data)) {
     return data.data.reduce((sum, entry) => {
       if (typeof entry.cost === 'number') {
         return sum + entry.cost;
       }
+
       // Estimate from token counts (Claude 3.5 Sonnet list pricing).
       const inputCost = ((entry.input_tokens ?? 0) / 1_000_000) * 3.0;
       const outputCost = ((entry.output_tokens ?? 0) / 1_000_000) * 15.0;
+
       return sum + inputCost + outputCost;
     }, 0);
   }
+
   return 0;
 }
 
@@ -316,12 +339,15 @@ function extractOAuthUsagePeriod(window: ClaudeOAuthUsageWindow | undefined): Us
   }
 
   const period: UsagePeriod = { used: window.utilization, limit: 100, unit: 'percent' };
+
   if (window.resets_at) {
     const resetsAt = new Date(window.resets_at);
+
     if (!Number.isNaN(resetsAt.getTime())) {
       period.resetsAt = resetsAt;
     }
   }
+
   return period;
 }
 
@@ -332,16 +358,19 @@ function collectJsonlFiles(root: string): string[] {
   while (stack.length > 0) {
     const current = stack.pop()!;
     const entries: fs.Dirent[] = (() => {
+
       try {
         return fs.readdirSync(current, { withFileTypes: true });
       } catch {
         return [];
       }
     })();
+
     if (entries.length === 0) continue;
 
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name);
+
       if (entry.isDirectory()) {
         stack.push(fullPath);
       } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
@@ -360,12 +389,14 @@ export function estimateClaudeUsageFromJsonl(
   end: Date
 ): { fiveHour: number; oneWeek: number; sawUsage: boolean } {
   const lines = raw.split('\n').filter(Boolean);
+
   let fiveHour = 0;
   let oneWeek = 0;
   let sawUsage = false;
 
   for (const line of lines) {
     let event: ClaudeProjectEvent;
+
     try {
       event = JSON.parse(line) as ClaudeProjectEvent;
     } catch {
@@ -377,16 +408,19 @@ export function estimateClaudeUsageFromJsonl(
     }
 
     const ts = new Date(event.timestamp);
+
     if (Number.isNaN(ts.getTime()) || ts > end || ts < oneWeekStart) {
       continue;
     }
 
     const usage = event.message.usage;
     const cost = estimateClaudeCostFromUsage(usage);
+
     if (cost <= 0) continue;
 
     sawUsage = true;
     oneWeek += cost;
+
     if (ts >= fiveHourStart) {
       fiveHour += cost;
     }

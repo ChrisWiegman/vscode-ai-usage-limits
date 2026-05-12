@@ -20,9 +20,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
 import { fetchWithRetry } from '../fetchWithRetry';
 import { readCache, tokenKey, writeCache } from '../sharedCache';
+import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
 
 const EXTENSION_ID = 'openai.chatgpt';
 const API_BASE = 'https://api.openai.com';
@@ -80,15 +80,18 @@ export class OpenAIProvider {
     }
 
     const token = this.resolveToken();
+
     if (token === undefined) {
       return { available: true, authenticated: false, budget: null, error: null };
     }
 
     try {
       const budget = await this.fetchBudget(token);
+
       return { available: true, authenticated: true, budget, error: null };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
       return { available: true, authenticated: true, budget: null, error: message };
     }
   }
@@ -101,26 +104,33 @@ export class OpenAIProvider {
   resolveToken(): string | undefined {
     const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
     const authFile = path.join(codexHome, 'auth.json');
+
     try {
       const raw = fs.readFileSync(authFile, 'utf8');
       const auth = JSON.parse(raw) as CodexAuth;
+
       if (auth?.OPENAI_API_KEY) return auth.OPENAI_API_KEY;
+
       if (auth?.tokens?.access_token) return auth.tokens.access_token;
     } catch {
       // File absent or parse error.
     }
+
     return undefined;
   }
 
   async fetchBudget(accessToken: string): Promise<BudgetInfo> {
     const key = tokenKey(accessToken);
     const cached = readCache(key);
+
     if (cached !== null) {
       return cached;
     }
 
     const budget = await this.fetchFreshBudget(accessToken);
+
     writeCache(key, budget);
+
     return budget;
   }
 
@@ -153,11 +163,13 @@ export class OpenAIProvider {
     const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
     const sessionsRoot = path.join(codexHome, 'sessions');
     const latestRollout = findLatestRolloutFile(sessionsRoot);
+
     if (!latestRollout) return null;
 
     try {
       const raw = fs.readFileSync(latestRollout, 'utf8');
       const stat = fs.statSync(latestRollout);
+
       return parseCodexRateLimitsFromRollout(raw, stat.mtime);
     } catch {
       return null;
@@ -170,20 +182,25 @@ export class OpenAIProvider {
     end: Date
   ): Promise<UsagePeriod | null> {
     const days = collectDays(start, end);
+
     let totalCost = 0;
 
     for (const dateStr of days) {
       const url = `${API_BASE}/v1/usage?date=${dateStr}`;
       const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
+
       if (!response.ok) {
         // 401/403/404 means the key lacks usage API access – treat as
         // unavailable rather than an error.
         if ([401, 403, 404].includes(response.status)) {
           return null;
         }
+
         throw new Error(`OpenAI API ${response.status}: ${await response.text()}`);
       }
+
       const data = (await response.json()) as OpenAIUsageResponse;
+
       totalCost += extractOpenAICost(data, dateStr, start, end);
     }
 
@@ -196,8 +213,11 @@ export class OpenAIProvider {
     try {
       const url = `${API_BASE}/v1/dashboard/billing/subscription`;
       const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
+
       if (!response.ok) return null;
+
       const data = (await response.json()) as OpenAISubscriptionResponse;
+
       return {
         softLimit: data.soft_limit_usd ?? null,
         hardLimit: data.hard_limit_usd ?? null,
@@ -235,14 +255,18 @@ function buildHeaders(token: string): Record<string, string> {
 export function collectDays(start: Date, end: Date): string[] {
   const days: string[] = [];
   const cursor = new Date(start);
+
   cursor.setUTCHours(0, 0, 0, 0);
+
   const endDay = new Date(end);
+
   endDay.setUTCHours(0, 0, 0, 0);
 
   while (cursor <= endDay) {
     days.push(cursor.toISOString().slice(0, 10));
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
+
   return days;
 }
 
@@ -270,9 +294,11 @@ export function extractOpenAICost(
   const ratio = Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / dayMs);
 
   let dayCost = 0;
+
   for (const entry of data.data) {
     const inputCost = ((entry.n_context_tokens_total ?? 0) / 1000) * COST_PER_1K_INPUT;
     const outputCost = ((entry.n_generated_tokens_total ?? 0) / 1000) * COST_PER_1K_OUTPUT;
+
     dayCost += inputCost + outputCost;
   }
 
@@ -283,36 +309,45 @@ function findLatestRolloutFile(root: string): string | null {
   if (!fs.existsSync(root)) return null;
 
   const stack: string[] = [root];
+
   let latestPath: string | null = null;
   let latestMtime = 0;
 
   while (stack.length > 0) {
     const current = stack.pop()!;
     const entries: fs.Dirent[] = (() => {
+
       try {
         return fs.readdirSync(current, { withFileTypes: true });
       } catch {
         return [];
       }
     })();
+
     if (entries.length === 0) continue;
 
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name);
+
       if (entry.isDirectory()) {
         stack.push(fullPath);
         continue;
       }
+
       if (!entry.isFile() || !entry.name.endsWith('.jsonl')) {
         continue;
       }
+
       let stat: fs.Stats;
+
       try {
         stat = fs.statSync(fullPath);
       } catch {
         continue;
       }
+
       const mtime = stat.mtimeMs;
+
       if (mtime > latestMtime) {
         latestMtime = mtime;
         latestPath = fullPath;
@@ -325,13 +360,17 @@ function findLatestRolloutFile(root: string): string | null {
 
 export function parseCodexRateLimitsFromRollout(raw: string, fallbackTimestamp?: Date): BudgetInfo | null {
   const lines = raw.split('\n').filter(Boolean);
+
   for (let index = lines.length - 1; index >= 0; index--) {
     try {
       const event = JSON.parse(lines[index]) as CodexSessionEvent;
+
       if (event.type !== 'event_msg' || event.payload?.type !== 'token_count') {
         continue;
       }
+
       const snapshot = event.payload.rate_limits;
+
       if (!snapshot) continue;
 
       const windows = [snapshot.primary, snapshot.secondary]
@@ -352,6 +391,7 @@ export function parseCodexRateLimitsFromRollout(raw: string, fallbackTimestamp?:
       // Ignore malformed lines and keep searching backward.
     }
   }
+
   return null;
 }
 
@@ -364,8 +404,11 @@ function pickRateLimitWindow(
 
   for (const window of windows) {
     const duration = window.window_minutes;
+
     if (typeof duration !== 'number') continue;
+
     const distance = Math.abs(duration - targetMinutes);
+
     if (distance < bestDistance) {
       best = window;
       bestDistance = distance;
@@ -405,6 +448,7 @@ function toPercentPeriod(
 
     const resetsAt = parseResetTimestamp(window.resets_at)
       ?? new Date(snapshotTimestamp.getTime() + windowMs);
+
     return { used: window.used_percent, limit: 100, unit: 'percent', resetsAt };
   }
 
@@ -416,9 +460,11 @@ function parseEventTimestamp(value: string | number | undefined): Date | undefin
   const date = typeof value === 'number'
     ? new Date(value)
     : new Date(value);
+
   if (Number.isNaN(date.getTime())) {
     return undefined;
   }
+
   return date;
 }
 

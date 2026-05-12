@@ -12,6 +12,7 @@ export async function fetchWithRetry(
   init?: RequestInit
 ): Promise<Response> {
   let attempt = 0;
+
   while (true) {
     const response = await fetch(url, init);
 
@@ -23,21 +24,27 @@ export async function fetchWithRetry(
     const delayMs = retryAfterMs ?? BASE_DELAY_MS * Math.pow(2, attempt);
 
     await sleep(delayMs);
+
     attempt++;
   }
 }
 
 function parseRetryAfter(header: string | null): number | null {
   if (!header) return null;
+
   const seconds = Number(header);
+
   if (!Number.isNaN(seconds) && seconds >= 0) {
     return seconds * 1_000;
   }
+
   // HTTP-date format
   const date = new Date(header);
+
   if (!Number.isNaN(date.getTime())) {
     return Math.max(0, date.getTime() - Date.now());
   }
+
   return null;
 }
 
