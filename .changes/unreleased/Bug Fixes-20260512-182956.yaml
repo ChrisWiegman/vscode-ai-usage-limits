@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: Ensure the extension loads after Claude and Codex to prevent it from not loading at all if VS Code tries to load it first.
-time: 2026-05-12T18:29:56.689064-05:00
