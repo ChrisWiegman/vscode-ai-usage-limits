@@ -64,7 +64,7 @@ Clicking a status bar item opens the corresponding usage/settings page in your b
    - `...` while data is being loaded
    - `No usage yet` when both usage windows are currently empty or unavailable
    - Usage values when at least one window is available
-5. Results are cached by token, refreshed every 5 minutes, and refreshed again when VS Code reports extension or authentication changes.
+5. Results are cached by token, refreshed every 5 minutes, and refreshed again when VS Code reports extension or authentication changes. If a companion extension was not yet registered at startup (VS Code does not guarantee all extensions are visible when `onStartupFinished` fires), a one-time retry runs 10 seconds later so the status bar items appear without requiring a manual refresh.
 6. Run **AI Limits: Refresh Now** from the Command Palette at any time to clear the cache and trigger an immediate fetch.
 
 ## Known Limitations

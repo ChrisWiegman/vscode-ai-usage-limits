@@ -41,7 +41,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  async function refresh(): Promise<void> {
+  // Returns true if any companion extension was not yet registered (retry needed).
+  async function refresh(): Promise<boolean> {
     const [claudeResult, openaiResult] = await Promise.allSettled([
       claude.getStatus(),
       openai.getStatus(),
@@ -71,15 +72,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (openaiStatus.error) {
       output.appendLine(`[${timestamp}] Codex error: ${openaiStatus.error}`);
     }
+
+    return !claudeStatus.available || !openaiStatus.available;
   }
-
-  // Initial fetch
-  await refresh();
-
-  // Periodic refresh
-  const timer = setInterval(() => { void refresh(); }, REFRESH_INTERVAL_MS);
-
-  context.subscriptions.push({ dispose: () => clearInterval(timer) });
 
   // Debounced refresh for event-driven triggers to avoid back-to-back API
   // bursts (e.g. the extension's own installation fires onDidChange).
@@ -89,14 +84,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (debounceTimer !== undefined) {
       clearTimeout(debounceTimer);
     }
-    
+
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
       void refresh();
     }, 5_000);
   };
 
-  // Refresh when any extension is installed or uninstalled
+  // Subscribe before the initial refresh so we never miss a change event
+  // that fires during startup before our listener is registered.
   context.subscriptions.push(
     vscode.extensions.onDidChange(debouncedRefresh)
   );
@@ -105,6 +101,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.authentication.onDidChangeSessions(debouncedRefresh)
   );
+
+  // Initial fetch
+  const anyUnavailable = await refresh();
+
+  // Periodic refresh
+  const timer = setInterval(() => { void refresh(); }, REFRESH_INTERVAL_MS);
+
+  context.subscriptions.push({ dispose: () => clearInterval(timer) });
+
+  // One-time delayed retry: onStartupFinished does not guarantee all
+  // extensions are registered yet. Only schedule when a companion extension
+  // (Claude or Codex) was missing from the initial check, so we don't retry
+  // needlessly when both were already visible.
+  if (anyUnavailable) {
+    const startupRetry = setTimeout(() => { void refresh(); }, 10_000);
+
+    context.subscriptions.push({ dispose: () => clearTimeout(startupRetry) });
+  }
 }
 
 export function deactivate(): void {

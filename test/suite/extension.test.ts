@@ -138,6 +138,63 @@ suite('extension activation', () => {
     assert.strictEqual(getClaudeStatusStub.callCount, 2, 'timer should not fire after disposal');
     assert.strictEqual(getOpenAIStatusStub.callCount, 2, 'timer should not fire after disposal');
   });
+
+  test('schedules a startup retry when Claude companion extension is not yet registered', async () => {
+    claudeStatus = { available: false, authenticated: false, budget: null, error: null };
+
+    const context = fakeContext();
+    await extensionModule.activate(context);
+
+    assert.strictEqual(getClaudeStatusStub.callCount, 1);
+
+    await fakeClock.tickAsync(10_000);
+
+    assert.strictEqual(getClaudeStatusStub.callCount, 2, 'retry should fire after 10s');
+    assert.strictEqual(getOpenAIStatusStub.callCount, 2, 'retry fires for both providers');
+  });
+
+  test('schedules a startup retry when Codex companion extension is not yet registered', async () => {
+    openaiStatus = { available: false, authenticated: false, budget: null, error: null };
+
+    const context = fakeContext();
+    await extensionModule.activate(context);
+
+    assert.strictEqual(getOpenAIStatusStub.callCount, 1);
+
+    await fakeClock.tickAsync(10_000);
+
+    assert.strictEqual(getOpenAIStatusStub.callCount, 2, 'retry should fire after 10s');
+    assert.strictEqual(getClaudeStatusStub.callCount, 2, 'retry fires for both providers');
+  });
+
+  test('does not schedule a startup retry when both providers are available', async () => {
+    // Both claudeStatus and openaiStatus default to available: true in setup.
+    await extensionModule.activate(fakeContext());
+
+    assert.strictEqual(getClaudeStatusStub.callCount, 1);
+
+    await fakeClock.tickAsync(10_000);
+
+    assert.strictEqual(getClaudeStatusStub.callCount, 1, 'no retry when both extensions were found');
+    assert.strictEqual(getOpenAIStatusStub.callCount, 1, 'no retry when both extensions were found');
+  });
+
+  test('cancels the startup retry on dispose', async () => {
+    claudeStatus = { available: false, authenticated: false, budget: null, error: null };
+
+    const context = fakeContext();
+    await extensionModule.activate(context);
+
+    for (const subscription of context.subscriptions) {
+      if (typeof (subscription as { dispose?: unknown }).dispose === 'function') {
+        (subscription as { dispose(): void }).dispose();
+      }
+    }
+
+    await fakeClock.tickAsync(10_000);
+
+    assert.strictEqual(getClaudeStatusStub.callCount, 1, 'retry should not fire after disposal');
+  });
 });
 
 function fakeContext(): vscode.ExtensionContext {
