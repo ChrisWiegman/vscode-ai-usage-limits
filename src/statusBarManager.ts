@@ -6,27 +6,24 @@ const CLAUDE_ICON = '✳';
 const CODEX_ICON = '◎';
 
 export class StatusBarManager implements vscode.Disposable {
-  private readonly claudeItem: vscode.StatusBarItem;
-  private readonly openaiItem: vscode.StatusBarItem;
+  private readonly item: vscode.StatusBarItem;
   private readonly errorCommand: string;
   private readonly claudeCommand: string;
   private readonly openaiCommand: string;
   private lastRefreshed: Date | undefined;
   private nextRefreshAt: Date | undefined;
+  private claudeStatus: ProviderStatus | null = null;
+  private openaiStatus: ProviderStatus | null = null;
 
   constructor(errorCommand: string, claudeCommand: string, openaiCommand: string) {
     this.errorCommand = errorCommand;
     this.claudeCommand = claudeCommand;
     this.openaiCommand = openaiCommand;
 
-    this.claudeItem = vscode.window.createStatusBarItem(
+    this.item = vscode.window.createStatusBarItem(
+      'ai-limits',
       vscode.StatusBarAlignment.Right,
       100
-    );
-
-    this.openaiItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Right,
-      99
     );
   }
 
@@ -36,30 +33,81 @@ export class StatusBarManager implements vscode.Disposable {
   }
 
   updateClaude(status: ProviderStatus): void {
-    this.updateItem(this.claudeItem, 'Claude', CLAUDE_ICON, status, this.claudeCommand);
+    this.claudeStatus = status;
+
+    this.render();
   }
 
   updateOpenAI(status: ProviderStatus): void {
-    this.updateItem(this.openaiItem, 'Codex', CODEX_ICON, status, this.openaiCommand);
+    this.openaiStatus = status;
+
+    this.render();
   }
 
-  private updateItem(
-    item: vscode.StatusBarItem,
-    label: string,
-    icon: string,
-    status: ProviderStatus,
-    defaultCommand: string
-  ): void {
-    if (!status.available) {
-      item.hide();
+  private render(): void {
+    const claudeAvailable = this.claudeStatus !== null && this.claudeStatus.available;
+    const openaiAvailable = this.openaiStatus !== null && this.openaiStatus.available;
+
+    if (!claudeAvailable && !openaiAvailable) {
+      this.item.hide();
+
       return;
     }
 
-    item.text = this.buildText(icon, status);
-    item.tooltip = this.buildTooltip(label, status);
-    item.command = status.error ? this.errorCommand : defaultCommand;
+    const parts: string[] = [];
 
-    item.show();
+    if (claudeAvailable) {
+      parts.push(this.buildText(CLAUDE_ICON, this.claudeStatus!));
+    }
+
+    if (openaiAvailable) {
+      parts.push(this.buildText(CODEX_ICON, this.openaiStatus!));
+    }
+
+    this.item.text = parts.join('  ');
+    this.item.tooltip = this.buildCombinedTooltip(claudeAvailable, openaiAvailable);
+    this.item.command = this.resolveCommand(claudeAvailable, openaiAvailable);
+
+    this.item.show();
+  }
+
+  private resolveCommand(claudeAvailable: boolean, openaiAvailable: boolean): string {
+    const claudeHasError = claudeAvailable && Boolean(this.claudeStatus?.error);
+    const openaiHasError = openaiAvailable && Boolean(this.openaiStatus?.error);
+
+    if (claudeHasError || openaiHasError) {
+      return this.errorCommand;
+    }
+
+    if (claudeAvailable && !openaiAvailable) {
+      return this.claudeCommand;
+    }
+
+    if (!claudeAvailable && openaiAvailable) {
+      return this.openaiCommand;
+    }
+
+    return this.errorCommand;
+  }
+
+  private buildCombinedTooltip(claudeAvailable: boolean, openaiAvailable: boolean): vscode.MarkdownString {
+    if (claudeAvailable && !openaiAvailable) {
+      return this.buildTooltip('Claude', this.claudeStatus!);
+    }
+
+    if (!claudeAvailable && openaiAvailable) {
+      return this.buildTooltip('Codex', this.openaiStatus!);
+    }
+
+    const claudeMd = this.buildTooltip('Claude', this.claudeStatus!);
+    const openaiMd = this.buildTooltip('Codex', this.openaiStatus!);
+    const combined = new vscode.MarkdownString();
+
+    combined.isTrusted = false;
+
+    combined.appendMarkdown(claudeMd.value + '\n\n---\n\n' + openaiMd.value);
+
+    return combined;
   }
 
   private buildText(icon: string, status: ProviderStatus): string {
@@ -164,8 +212,7 @@ export class StatusBarManager implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.claudeItem.dispose();
-    this.openaiItem.dispose();
+    this.item.dispose();
   }
 }
 

@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Cancel pending debounce timer on deactivation to prevent updates to disposed status bar items
+time: 2026-05-12T21:36:28.444751-05:00

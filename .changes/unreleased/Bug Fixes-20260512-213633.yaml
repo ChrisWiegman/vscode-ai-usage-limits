@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Add per-request HTTP timeout via AbortController in fetchWithRetry to prevent indefinitely-hanging fetch calls
+time: 2026-05-12T21:36:33.338112-05:00

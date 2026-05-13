@@ -21,6 +21,7 @@ suite('extension activation', () => {
   let updateClaudeStub: sinon.SinonStub;
   let updateOpenAIStub: sinon.SinonStub;
   let setRefreshInfoStub: sinon.SinonStub;
+  let onDidChangeFn: (() => void) | undefined;
 
   setup(() => {
     sandbox = sinon.createSandbox();
@@ -52,7 +53,11 @@ suite('extension activation', () => {
       return { dispose: noop };
     });
     sandbox.stub(vscode.env, 'openExternal').resolves(true);
-    sandbox.stub(vscode.extensions, 'onDidChange').returns({ dispose: noop });
+    onDidChangeFn = undefined;
+    sandbox.stub(vscode.extensions, 'onDidChange').callsFake((fn) => {
+      onDidChangeFn = fn as () => void;
+      return { dispose: noop };
+    });
     sandbox.stub(vscode.authentication, 'onDidChangeSessions').returns({ dispose: noop });
 
     getClaudeStatusStub = sandbox.stub(ClaudeProvider.prototype, 'getStatus').callsFake(async () => claudeStatus);
@@ -77,10 +82,11 @@ suite('extension activation', () => {
     assert.ok(commandHandlers.has('ai-limits.openOpenAISettings'));
     assert.strictEqual(getClaudeStatusStub.callCount, 1);
     assert.strictEqual(getOpenAIStatusStub.callCount, 1);
-    assert.strictEqual(updateClaudeStub.callCount, 1);
-    assert.strictEqual(updateOpenAIStub.callCount, 1);
-    assert.deepStrictEqual(updateClaudeStub.firstCall.args[0], claudeStatus);
-    assert.deepStrictEqual(updateOpenAIStub.firstCall.args[0], openaiStatus);
+    // call 1 = loading state shown immediately; call 2 = after refresh completes
+    assert.strictEqual(updateClaudeStub.callCount, 2);
+    assert.strictEqual(updateOpenAIStub.callCount, 2);
+    assert.deepStrictEqual(updateClaudeStub.lastCall.args[0], claudeStatus);
+    assert.deepStrictEqual(updateOpenAIStub.lastCall.args[0], openaiStatus);
     assert.strictEqual(setRefreshInfoStub.callCount, 1);
     assert.ok(context.subscriptions.length >= 5, 'expected output, status bar, commands, timer, and listeners');
   });
@@ -108,8 +114,9 @@ suite('extension activation', () => {
 
     assert.ok(output.lines.some((line) => line.includes('Claude error: rate limited')), output.lines.join('\n'));
     assert.ok(output.lines.some((line) => line.includes('Codex error: Error: boom')), output.lines.join('\n'));
-    assert.strictEqual(updateOpenAIStub.callCount, 1);
-    assert.strictEqual(updateOpenAIStub.firstCall.args[0].error, 'Error: boom');
+    // call 1 = loading state; call 2 = after refresh with actual error
+    assert.strictEqual(updateOpenAIStub.callCount, 2);
+    assert.strictEqual(updateOpenAIStub.lastCall.args[0].error, 'Error: boom');
   });
 
   test('records refresh timing during activation', async () => {
@@ -194,6 +201,28 @@ suite('extension activation', () => {
     await fakeClock.tickAsync(10_000);
 
     assert.strictEqual(getClaudeStatusStub.callCount, 1, 'retry should not fire after disposal');
+  });
+
+  test('cancels the debounce timer on dispose so it does not update disposed status bar items', async () => {
+    const context = fakeContext();
+    await extensionModule.activate(context);
+
+    // Simulate an extension change event that starts the 5-second debounce window.
+    onDidChangeFn?.();
+
+    // Dispose all subscriptions immediately — simulates deactivation or host
+    // reload while a debounce is still pending.
+    for (const subscription of context.subscriptions) {
+      if (typeof (subscription as { dispose?: unknown }).dispose === 'function') {
+        (subscription as { dispose(): void }).dispose();
+      }
+    }
+
+    // Advance past the 5-second debounce window; the cancelled timer must not fire.
+    await fakeClock.tickAsync(5_000);
+
+    assert.strictEqual(getClaudeStatusStub.callCount, 1, 'debounce must not fire after dispose');
+    assert.strictEqual(getOpenAIStatusStub.callCount, 1, 'debounce must not fire after dispose');
   });
 });
 

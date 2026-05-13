@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Use async exec instead of execSync for macOS Keychain lookup to avoid blocking the VS Code extension host event loop
+time: 2026-05-12T21:36:32.570565-05:00

@@ -4,6 +4,7 @@ import * as sinon from 'sinon';
 import childProcess = require('child_process');
 import fs = require('fs');
 import { ClaudeProvider, estimateClaudeUsageFromJsonl, extractToken } from '../../src/providers/claudeProvider';
+import { RateLimitError } from '../../src/fetchWithRetry';
 import { tokenKey, CACHE_TTL_MS, CACHE_PATH } from '../../src/sharedCache';
 
 const EXTENSION_ID = 'anthropic.claude-code';
@@ -11,7 +12,6 @@ const EXTENSION_ID = 'anthropic.claude-code';
 suite('ClaudeProvider', () => {
   let provider: ClaudeProvider;
   let getExtensionStub: sinon.SinonStub;
-  let execSyncStub: sinon.SinonStub;
   let readFileSyncStub: sinon.SinonStub;
   let existsSyncStub: sinon.SinonStub;
   let readdirSyncStub: sinon.SinonStub;
@@ -21,7 +21,15 @@ suite('ClaudeProvider', () => {
   setup(() => {
     provider = new ClaudeProvider();
     getExtensionStub = sinon.stub(vscode.extensions, 'getExtension');
-    execSyncStub = sinon.stub(childProcess, 'execSync');
+    // Stub exec so the keychain lookup immediately fails (non-blocking async),
+    // which causes resolveToken() to fall through to the file credential.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (sinon.stub(childProcess, 'exec') as any).callsFake(
+      (_cmd: string, _opts: unknown, cb: (err: Error | null, stdout: string) => void) => {
+        if (typeof cb === 'function') cb(new Error('keychain unavailable'), '');
+        return { unref: () => {}, kill: () => {} };
+      }
+    );
     readFileSyncStub = sinon.stub(fs, 'readFileSync');
     existsSyncStub = sinon.stub(fs, 'existsSync');
     readdirSyncStub = sinon.stub(fs, 'readdirSync');
@@ -50,7 +58,6 @@ suite('ClaudeProvider', () => {
 
   test('returns not-authenticated when no credentials are found', async () => {
     getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
-    execSyncStub.throws(new Error('not found'));
     readFileSyncStub.throws(new Error('ENOENT'));
 
     const status = await provider.getStatus();
@@ -62,7 +69,7 @@ suite('ClaudeProvider', () => {
   test('reads OAuth token from credentials file and shows authenticated', async () => {
     getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
     readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }));
-    fetchStub.resolves(fakeResponse({ data: [] }));
+    fetchStub.resolves(fakeResponse({ five_hour: { utilization: 50 }, seven_day: { utilization: 30 } }));
 
     const status = await provider.getStatus();
     assert.strictEqual(status.available, true);
@@ -71,9 +78,8 @@ suite('ClaudeProvider', () => {
 
   test('falls back to credential file when keychain throws', async () => {
     getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
-    execSyncStub.throws(new Error('keychain unavailable'));
     readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-file' } }));
-    fetchStub.resolves(fakeResponse({ data: [] }));
+    fetchStub.resolves(fakeResponse({ five_hour: { utilization: 20 }, seven_day: { utilization: 10 } }));
 
     const status = await provider.getStatus();
     assert.strictEqual(status.authenticated, true);
@@ -87,6 +93,30 @@ suite('ClaudeProvider', () => {
     const status = await provider.getStatus();
     assert.strictEqual(status.authenticated, true);
     assert.ok(status.error !== null, 'should have error');
+  });
+
+  test('surfaces rate-limit error with message when API is rate-limited', async () => {
+    getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+    readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }));
+    const retryAfter = new Date(Date.now() + 60_000);
+    fetchStub.rejects(new RateLimitError(retryAfter));
+
+    const status = await provider.getStatus();
+    assert.strictEqual(status.available, true);
+    assert.strictEqual(status.authenticated, true);
+    assert.strictEqual(status.budget, null);
+    assert.ok(status.error !== null, 'should have error');
+    assert.ok(status.error!.toLowerCase().includes('rate limit'), 'error should mention rate limit');
+  });
+
+  test('surfaces rate-limit error without retry time when no Retry-After header', async () => {
+    getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+    readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }));
+    fetchStub.rejects(new RateLimitError(null));
+
+    const status = await provider.getStatus();
+    assert.ok(status.error !== null, 'should have error');
+    assert.ok(status.error!.toLowerCase().includes('rate limit'), 'error should mention rate limit');
   });
 
   // -------------------------------------------------------------------------
@@ -178,6 +208,26 @@ suite('ClaudeProvider', () => {
     assert.strictEqual(budget.fiveHour, null);
     assert.ok(budget.oneWeek !== null);
     assert.strictEqual(budget.oneWeek!.used, 42);
+  });
+
+  test('surfaces error when OAuth response has no utilization data in either window', async () => {
+    getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+    readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }));
+    fetchStub.resolves(fakeResponse({ five_hour: { utilization: null }, seven_day: { utilization: null } }));
+
+    const status = await provider.getStatus();
+    assert.strictEqual(status.authenticated, true);
+    assert.ok(status.error !== null, 'should surface an error when no utilization data');
+  });
+
+  test('surfaces error when OAuth response is in an unexpected format', async () => {
+    getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+    readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }));
+    fetchStub.resolves(fakeResponse({ data: [] }));
+
+    const status = await provider.getStatus();
+    assert.strictEqual(status.authenticated, true);
+    assert.ok(status.error !== null, 'should surface an error for unrecognised response format');
   });
 
   test('falls back to local Claude project JSONL when usage API is unavailable', async () => {

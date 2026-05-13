@@ -13,7 +13,7 @@
  * header (API key starting with "sk-ant-api") to call Anthropic's usage API.
  */
 
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -77,7 +77,7 @@ export class ClaudeProvider {
       return notAvailable();
     }
 
-    const token = this.resolveToken();
+    const token = await this.resolveToken();
 
     if (token === undefined) {
       return { available: true, authenticated: false, budget: null, error: null };
@@ -97,16 +97,26 @@ export class ClaudeProvider {
   /**
    * Reads the stored token from the macOS Keychain or the credential file.
    * Returns undefined if no credential is found.
+   *
+   * Uses async exec (not execSync) so the VS Code extension host event loop
+   * is never blocked — a blocked loop prevents all timers from firing.
    */
-  resolveToken(): string | undefined {
-    // 1. macOS Keychain
+  async resolveToken(): Promise<string | undefined> {
+    // 1. macOS Keychain (async to keep the event loop free)
     if (process.platform === 'darwin') {
       try {
         const account = process.env.USER ?? os.userInfo().username;
-        const raw = execSync(
-          `security find-generic-password -a "${account}" -w -s "${KEYCHAIN_SERVICE}"`,
-          { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim();
+        const raw = await new Promise<string>((resolve, reject) => {
+          const child = exec(
+            `security find-generic-password -a "${account}" -w -s "${KEYCHAIN_SERVICE}"`,
+            { encoding: 'utf8', timeout: 2_000, killSignal: 'SIGKILL' },
+            (error, stdout) => {
+              if (error) reject(error);
+              else resolve(stdout.trim());
+            }
+          );
+          child.unref();
+        });
 
         const token = extractToken(raw);
 
@@ -191,9 +201,15 @@ export class ClaudeProvider {
     });
 
     if (!response.ok) {
-      // Any non-success (including 429 rate-limit) falls through to the
-      // standard usage API or local-file fallback rather than surfacing an error.
-      return null;
+      if (response.status === 401 || response.status === 403) {
+        // Token is not authorized for this endpoint — not an error.
+        return null;
+      }
+
+      const retryAfter = response.headers.get('Retry-After');
+      const detail = retryAfter ? ` (Retry-After: ${retryAfter}s)` : '';
+
+      throw new Error(`Anthropic API returned HTTP ${response.status}${detail}`);
     }
 
     const data = (await response.json()) as ClaudeOAuthUsageResponse;
@@ -201,7 +217,9 @@ export class ClaudeProvider {
     const oneWeek = extractOAuthUsagePeriod(data.seven_day);
 
     if (fiveHour === null && oneWeek === null) {
-      return null;
+      throw new Error(
+        `OAuth usage API returned OK but no utilization data — response: ${JSON.stringify(data)}`
+      );
     }
 
     return { fiveHour, oneWeek };
@@ -262,8 +280,8 @@ export class ClaudeProvider {
     const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
 
     if (!response.ok) {
-      // Any non-success (including 429 rate-limit) falls through to the
-      // local-file fallback rather than surfacing an error.
+      // Non-success responses other than 429 (which fetchWithRetry converts to
+      // a thrown RateLimitError) fall through to the local-file fallback.
       return null;
     }
 
