@@ -53,7 +53,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "test": "node ./out/test/runTests.js",
-    "lint": "biome lint src test"
+    "lint": "eslint src/ test/"
   },
   "overrides": {
     "diff": "^9.0.0",
@@ -62,7 +62,8 @@
     "uuid": "^14.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15",
+    "eslint": "^10.3.0",
+    "typescript-eslint": "^8.0.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.7.0",
     "@types/sinon": "^21.0.1",
