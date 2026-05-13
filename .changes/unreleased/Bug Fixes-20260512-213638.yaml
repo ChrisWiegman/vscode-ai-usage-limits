@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: Show status bar in loading state immediately on activation so it is populated before the first async refresh completes
-time: 2026-05-12T21:36:38.477972-05:00
