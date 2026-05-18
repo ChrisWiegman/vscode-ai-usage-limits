@@ -43,6 +43,13 @@ export default tseslint.config(
       "@stylistic/computed-property-spacing": ["error", "never"],
       "@stylistic/dot-location": ["error", "property"],
       "@stylistic/padded-blocks": ["error", "never"],
+      "@stylistic/padding-line-between-statements": [
+        "error",
+        { blankLine: "always", prev: "*", next: "if" },
+        { blankLine: "always", prev: "if", next: "*" },
+        { blankLine: "always", prev: ["const", "let", "var"], next: "*" },
+        { blankLine: "any", prev: ["const", "let", "var"], next: ["const", "let", "var"] },
+      ],
 
       // complexity
       "no-regex-spaces": "error",
@@ -99,6 +106,7 @@ export default tseslint.config(
     rules: {
       "no-console": "off",
       "@typescript-eslint/no-require-imports": "off",
+      "@stylistic/padding-line-between-statements": "off",
     },
   },
 );
