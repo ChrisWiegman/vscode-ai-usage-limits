@@ -16,16 +16,16 @@
  * pro-rated from today's usage.
  */
 
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import * as vscode from 'vscode';
-import { fetchWithRetry } from '../fetchWithRetry';
-import { readCache, tokenKey, writeCache } from '../sharedCache';
-import { BudgetInfo, ProviderStatus, UsagePeriod } from '../types';
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import * as vscode from "vscode";
+import { fetchWithRetry } from "../fetchWithRetry";
+import { readCache, tokenKey, writeCache } from "../sharedCache";
+import { BudgetInfo, ProviderStatus, UsagePeriod } from "../types";
 
-const EXTENSION_ID = 'openai.chatgpt';
-const API_BASE = 'https://api.openai.com';
+const EXTENSION_ID = "openai.chatgpt";
+const API_BASE = "https://api.openai.com";
 
 /** Approximate cost per 1 000 tokens (GPT-4o list pricing). */
 const COST_PER_1K_INPUT = 0.005;
@@ -33,199 +33,199 @@ const COST_PER_1K_OUTPUT = 0.015;
 
 /** Shape of the Codex auth credentials file. */
 interface CodexAuth {
-  OPENAI_API_KEY?: string;
-  tokens?: { access_token?: string };
+	OPENAI_API_KEY?: string;
+	tokens?: { access_token?: string };
 }
 
 interface CodexSessionEvent {
-  type?: string;
-  timestamp?: string | number;
-  payload?: {
-    type?: string;
-    rate_limits?: CodexRateLimitSnapshot;
-  };
+	type?: string;
+	timestamp?: string | number;
+	payload?: {
+		type?: string;
+		rate_limits?: CodexRateLimitSnapshot;
+	};
 }
 
 interface CodexRateLimitSnapshot {
-  primary?: CodexRateLimitWindow;
-  secondary?: CodexRateLimitWindow;
+	primary?: CodexRateLimitWindow;
+	secondary?: CodexRateLimitWindow;
 }
 
 interface CodexRateLimitWindow {
-  used_percent?: number;
-  window_minutes?: number | null;
-  resets_at?: number | string | null;
+	used_percent?: number;
+	window_minutes?: number | null;
+	resets_at?: number | string | null;
 }
 
 /** Shape of the OpenAI usage API response (legacy dashboard endpoint). */
 interface OpenAIUsageResponse {
-  object?: string;
-  data?: Array<{
-    aggregation_timestamp?: number;
-    n_context_tokens_total?: number;
-    n_generated_tokens_total?: number;
-  }>;
+	object?: string;
+	data?: Array<{
+		aggregation_timestamp?: number;
+		n_context_tokens_total?: number;
+		n_generated_tokens_total?: number;
+	}>;
 }
 
 /** Shape of the OpenAI billing subscription response. */
 interface OpenAISubscriptionResponse {
-  hard_limit_usd?: number;
-  soft_limit_usd?: number;
+	hard_limit_usd?: number;
+	soft_limit_usd?: number;
 }
 
 export class OpenAIProvider {
-  async getStatus(): Promise<ProviderStatus> {
-    if (!vscode.extensions.getExtension(EXTENSION_ID)) {
-      return notAvailable();
-    }
+	async getStatus(): Promise<ProviderStatus> {
+		if (!vscode.extensions.getExtension(EXTENSION_ID)) {
+			return notAvailable();
+		}
 
-    const token = this.resolveToken();
+		const token = this.resolveToken();
 
-    if (token === undefined) {
-      return { available: true, authenticated: false, budget: null, error: null };
-    }
+		if (token === undefined) {
+			return { available: true, authenticated: false, budget: null, error: null };
+		}
 
-    try {
-      const budget = await this.fetchBudget(token);
+		try {
+			const budget = await this.fetchBudget(token);
 
-      return { available: true, authenticated: true, budget, error: null };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+			return { available: true, authenticated: true, budget, error: null };
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
 
-      return { available: true, authenticated: true, budget: null, error: message };
-    }
-  }
+			return { available: true, authenticated: true, budget: null, error: message };
+		}
+	}
 
-  /**
+	/**
    * Reads the API key from the auth credentials file in the Codex home
    * directory (`~/.codex/` or `$CODEX_HOME/`).
    * Returns undefined if the file is absent or contains no usable key.
    */
-  resolveToken(): string | undefined {
-    const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
-    const authFile = path.join(codexHome, 'auth.json');
+	resolveToken(): string | undefined {
+		const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+		const authFile = path.join(codexHome, "auth.json");
 
-    try {
-      const raw = fs.readFileSync(authFile, 'utf8');
-      const auth = JSON.parse(raw) as CodexAuth;
+		try {
+			const raw = fs.readFileSync(authFile, "utf8");
+			const auth = JSON.parse(raw) as CodexAuth;
 
-      if (auth?.OPENAI_API_KEY) return auth.OPENAI_API_KEY;
+			if (auth?.OPENAI_API_KEY) return auth.OPENAI_API_KEY;
 
-      if (auth?.tokens?.access_token) return auth.tokens.access_token;
-    } catch {
-      // File absent or parse error.
-    }
+			if (auth?.tokens?.access_token) return auth.tokens.access_token;
+		} catch {
+			// File absent or parse error.
+		}
 
-    return undefined;
-  }
+		return undefined;
+	}
 
-  async fetchBudget(accessToken: string): Promise<BudgetInfo> {
-    const key = tokenKey(accessToken);
-    const cached = readCache(key);
+	async fetchBudget(accessToken: string): Promise<BudgetInfo> {
+		const key = tokenKey(accessToken);
+		const cached = readCache(key);
 
-    if (cached !== null) {
-      return cached;
-    }
+		if (cached !== null) {
+			return cached;
+		}
 
-    const budget = await this.fetchFreshBudget(accessToken);
+		const budget = await this.fetchFreshBudget(accessToken);
 
-    writeCache(key, budget);
+		writeCache(key, budget);
 
-    return budget;
-  }
+		return budget;
+	}
 
-  private async fetchFreshBudget(accessToken: string): Promise<BudgetInfo> {
-    // JWT tokens (Codex OAuth auth_mode) are not valid OpenAI Platform API
-    // keys. Use locally cached rate-limit windows as a fallback.
-    if (isJwt(accessToken)) {
-      return this.readBudgetFromCodexSessions() ?? { fiveHour: null, oneWeek: null };
-    }
+	private async fetchFreshBudget(accessToken: string): Promise<BudgetInfo> {
+		// JWT tokens (Codex OAuth auth_mode) are not valid OpenAI Platform API
+		// keys. Use locally cached rate-limit windows as a fallback.
+		if (isJwt(accessToken)) {
+			return this.readBudgetFromCodexSessions() ?? { fiveHour: null, oneWeek: null };
+		}
 
-    const now = new Date();
-    const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+		const now = new Date();
+		const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+		const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const subscription = await this.fetchSubscription(accessToken);
-    const fiveHour = await this.fetchPeriod(accessToken, fiveHoursAgo, now);
-    const oneWeek = await this.fetchPeriod(accessToken, oneWeekAgo, now);
+		const subscription = await this.fetchSubscription(accessToken);
+		const fiveHour = await this.fetchPeriod(accessToken, fiveHoursAgo, now);
+		const oneWeek = await this.fetchPeriod(accessToken, oneWeekAgo, now);
 
-    return {
-      fiveHour: fiveHour === null
-        ? null
-        : { ...fiveHour, limit: subscription?.softLimit ?? null, unit: 'usd' },
-      oneWeek: oneWeek === null
-        ? null
-        : { ...oneWeek, limit: subscription?.hardLimit ?? null, unit: 'usd' },
-    };
-  }
+		return {
+			fiveHour: fiveHour === null
+				? null
+				: { ...fiveHour, limit: subscription?.softLimit ?? null, unit: "usd" },
+			oneWeek: oneWeek === null
+				? null
+				: { ...oneWeek, limit: subscription?.hardLimit ?? null, unit: "usd" },
+		};
+	}
 
-  private readBudgetFromCodexSessions(): BudgetInfo | null {
-    const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
-    const sessionsRoot = path.join(codexHome, 'sessions');
-    const latestRollout = findLatestRolloutFile(sessionsRoot);
+	private readBudgetFromCodexSessions(): BudgetInfo | null {
+		const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+		const sessionsRoot = path.join(codexHome, "sessions");
+		const latestRollout = findLatestRolloutFile(sessionsRoot);
 
-    if (!latestRollout) return null;
+		if (!latestRollout) return null;
 
-    try {
-      const raw = fs.readFileSync(latestRollout, 'utf8');
-      const stat = fs.statSync(latestRollout);
+		try {
+			const raw = fs.readFileSync(latestRollout, "utf8");
+			const stat = fs.statSync(latestRollout);
 
-      return parseCodexRateLimitsFromRollout(raw, stat.mtime);
-    } catch {
-      return null;
-    }
-  }
+			return parseCodexRateLimitsFromRollout(raw, stat.mtime);
+		} catch {
+			return null;
+		}
+	}
 
-  private async fetchPeriod(
-    token: string,
-    start: Date,
-    end: Date
-  ): Promise<UsagePeriod | null> {
-    const days = collectDays(start, end);
+	private async fetchPeriod(
+		token: string,
+		start: Date,
+		end: Date,
+	): Promise<UsagePeriod | null> {
+		const days = collectDays(start, end);
 
-    let totalCost = 0;
+		let totalCost = 0;
 
-    for (const dateStr of days) {
-      const url = `${API_BASE}/v1/usage?date=${dateStr}`;
-      const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
+		for (const dateStr of days) {
+			const url = `${API_BASE}/v1/usage?date=${dateStr}`;
+			const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
 
-      if (!response.ok) {
-        // 401/403/404 means the key lacks usage API access – treat as
-        // unavailable rather than an error.
-        if ([401, 403, 404].includes(response.status)) {
-          return null;
-        }
+			if (!response.ok) {
+				// 401/403/404 means the key lacks usage API access – treat as
+				// unavailable rather than an error.
+				if ([401, 403, 404].includes(response.status)) {
+					return null;
+				}
 
-        throw new Error(`OpenAI API ${response.status}: ${await response.text()}`);
-      }
+				throw new Error(`OpenAI API ${response.status}: ${await response.text()}`);
+			}
 
-      const data = (await response.json()) as OpenAIUsageResponse;
+			const data = (await response.json()) as OpenAIUsageResponse;
 
-      totalCost += extractOpenAICost(data, dateStr, start, end);
-    }
+			totalCost += extractOpenAICost(data, dateStr, start, end);
+		}
 
-    return { used: totalCost, limit: null };
-  }
+		return { used: totalCost, limit: null };
+	}
 
-  private async fetchSubscription(
-    token: string
-  ): Promise<{ softLimit: number | null; hardLimit: number | null } | null> {
-    try {
-      const url = `${API_BASE}/v1/dashboard/billing/subscription`;
-      const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
+	private async fetchSubscription(
+		token: string,
+	): Promise<{ softLimit: number | null; hardLimit: number | null } | null> {
+		try {
+			const url = `${API_BASE}/v1/dashboard/billing/subscription`;
+			const response = await fetchWithRetry(url, { headers: buildHeaders(token) });
 
-      if (!response.ok) return null;
+			if (!response.ok) return null;
 
-      const data = (await response.json()) as OpenAISubscriptionResponse;
+			const data = (await response.json()) as OpenAISubscriptionResponse;
 
-      return {
-        softLimit: data.soft_limit_usd ?? null,
-        hardLimit: data.hard_limit_usd ?? null,
-      };
-    } catch {
-      return null;
-    }
-  }
+			return {
+				softLimit: data.soft_limit_usd ?? null,
+				hardLimit: data.hard_limit_usd ?? null,
+			};
+		} catch {
+			return null;
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -233,19 +233,19 @@ export class OpenAIProvider {
 // ---------------------------------------------------------------------------
 
 function notAvailable(): ProviderStatus {
-  return { available: false, authenticated: false, budget: null, error: null };
+	return { available: false, authenticated: false, budget: null, error: null };
 }
 
 /** Returns true when the token is a JWT (Codex OAuth) rather than an API key. */
 function isJwt(token: string): boolean {
-  return token.startsWith('eyJ');
+	return token.startsWith("eyJ");
 }
 
 function buildHeaders(token: string): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  };
+	return {
+		"Content-Type": "application/json",
+		Authorization: `Bearer ${token}`,
+	};
 }
 
 /**
@@ -253,21 +253,21 @@ function buildHeaders(token: string): Record<string, string> {
  * overlap with [start, end).
  */
 export function collectDays(start: Date, end: Date): string[] {
-  const days: string[] = [];
-  const cursor = new Date(start);
+	const days: string[] = [];
+	const cursor = new Date(start);
 
-  cursor.setUTCHours(0, 0, 0, 0);
+	cursor.setUTCHours(0, 0, 0, 0);
 
-  const endDay = new Date(end);
+	const endDay = new Date(end);
 
-  endDay.setUTCHours(0, 0, 0, 0);
+	endDay.setUTCHours(0, 0, 0, 0);
 
-  while (cursor <= endDay) {
-    days.push(cursor.toISOString().slice(0, 10));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
+	while (cursor <= endDay) {
+		days.push(cursor.toISOString().slice(0, 10));
+		cursor.setUTCDate(cursor.getUTCDate() + 1);
+	}
 
-  return days;
+	return days;
 }
 
 /**
@@ -276,208 +276,208 @@ export function collectDays(start: Date, end: Date): string[] {
  * falls within [periodStart, periodEnd].
  */
 export function extractOpenAICost(
-  data: OpenAIUsageResponse,
-  dateStr: string,
-  periodStart: Date,
-  periodEnd: Date
+	data: OpenAIUsageResponse,
+	dateStr: string,
+	periodStart: Date,
+	periodEnd: Date,
 ): number {
-  if (!Array.isArray(data.data) || data.data.length === 0) {
-    return 0;
-  }
+	if (!Array.isArray(data.data) || data.data.length === 0) {
+		return 0;
+	}
 
-  const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
-  const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+	const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+	const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
 
-  const overlapStart = periodStart > dayStart ? periodStart : dayStart;
-  const overlapEnd = periodEnd < dayEnd ? periodEnd : dayEnd;
-  const dayMs = 24 * 60 * 60 * 1000;
-  const ratio = Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / dayMs);
+	const overlapStart = periodStart > dayStart ? periodStart : dayStart;
+	const overlapEnd = periodEnd < dayEnd ? periodEnd : dayEnd;
+	const dayMs = 24 * 60 * 60 * 1000;
+	const ratio = Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / dayMs);
 
-  let dayCost = 0;
+	let dayCost = 0;
 
-  for (const entry of data.data) {
-    const inputCost = ((entry.n_context_tokens_total ?? 0) / 1000) * COST_PER_1K_INPUT;
-    const outputCost = ((entry.n_generated_tokens_total ?? 0) / 1000) * COST_PER_1K_OUTPUT;
+	for (const entry of data.data) {
+		const inputCost = ((entry.n_context_tokens_total ?? 0) / 1000) * COST_PER_1K_INPUT;
+		const outputCost = ((entry.n_generated_tokens_total ?? 0) / 1000) * COST_PER_1K_OUTPUT;
 
-    dayCost += inputCost + outputCost;
-  }
+		dayCost += inputCost + outputCost;
+	}
 
-  return dayCost * ratio;
+	return dayCost * ratio;
 }
 
 function findLatestRolloutFile(root: string): string | null {
-  if (!fs.existsSync(root)) return null;
+	if (!fs.existsSync(root)) return null;
 
-  const stack: string[] = [root];
+	const stack: string[] = [root];
 
-  let latestPath: string | null = null;
-  let latestMtime = 0;
+	let latestPath: string | null = null;
+	let latestMtime = 0;
 
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    const entries: fs.Dirent[] = (() => {
+	while (stack.length > 0) {
+		const current = stack.pop()!;
+		const entries: fs.Dirent[] = (() => {
+			try {
+				return fs.readdirSync(current, { withFileTypes: true });
+			} catch {
+				return [];
+			}
+		})();
 
-      try {
-        return fs.readdirSync(current, { withFileTypes: true });
-      } catch {
-        return [];
-      }
-    })();
+		if (entries.length === 0) continue;
 
-    if (entries.length === 0) continue;
+		for (const entry of entries) {
+			const fullPath = path.join(current, entry.name);
 
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
+			if (entry.isDirectory()) {
+				stack.push(fullPath);
+				continue;
+			}
 
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
-        continue;
-      }
+			if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
+				continue;
+			}
 
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) {
-        continue;
-      }
+			let stat: fs.Stats;
 
-      let stat: fs.Stats;
+			try {
+				stat = fs.statSync(fullPath);
+			} catch {
+				continue;
+			}
 
-      try {
-        stat = fs.statSync(fullPath);
-      } catch {
-        continue;
-      }
+			const mtime = stat.mtimeMs;
 
-      const mtime = stat.mtimeMs;
+			if (mtime > latestMtime) {
+				latestMtime = mtime;
+				latestPath = fullPath;
+			}
+		}
+	}
 
-      if (mtime > latestMtime) {
-        latestMtime = mtime;
-        latestPath = fullPath;
-      }
-    }
-  }
-
-  return latestPath;
+	return latestPath;
 }
 
 export function parseCodexRateLimitsFromRollout(raw: string, fallbackTimestamp?: Date): BudgetInfo | null {
-  const lines = raw.split('\n').filter(Boolean);
+	const lines = raw.split("\n").filter(Boolean);
 
-  for (let index = lines.length - 1; index >= 0; index--) {
-    try {
-      const event = JSON.parse(lines[index]) as CodexSessionEvent;
+	for (let index = lines.length - 1; index >= 0; index--) {
+		try {
+			const event = JSON.parse(lines[index]) as CodexSessionEvent;
 
-      if (event.type !== 'event_msg' || event.payload?.type !== 'token_count') {
-        continue;
-      }
+			if (event.type !== "event_msg" || event.payload?.type !== "token_count") {
+				continue;
+			}
 
-      const snapshot = event.payload.rate_limits;
+			const snapshot = event.payload.rate_limits;
 
-      if (!snapshot) continue;
+			if (!snapshot) continue;
 
-      const windows = [snapshot.primary, snapshot.secondary]
-        .filter((window): window is CodexRateLimitWindow => Boolean(window))
-        .filter((window) => typeof window.window_minutes === 'number');
+			const windows = [snapshot.primary, snapshot.secondary]
+				.filter((window): window is CodexRateLimitWindow => Boolean(window))
+				.filter((window) => typeof window.window_minutes === "number");
 
-      if (windows.length === 0) continue;
+			if (windows.length === 0) continue;
 
-      const fiveHourWindow = pickRateLimitWindow(windows, 300);
-      const oneWeekWindow = pickRateLimitWindow(windows, 10080);
-      const snapshotTimestamp = parseEventTimestamp(event.timestamp) ?? fallbackTimestamp;
+			const fiveHourWindow = pickRateLimitWindow(windows, 300);
+			const oneWeekWindow = pickRateLimitWindow(windows, 10080);
+			const snapshotTimestamp = parseEventTimestamp(event.timestamp) ?? fallbackTimestamp;
 
-      return {
-        fiveHour: toPercentPeriod(fiveHourWindow, snapshotTimestamp),
-        oneWeek: toPercentPeriod(oneWeekWindow, snapshotTimestamp),
-      };
-    } catch {
-      // Ignore malformed lines and keep searching backward.
-    }
-  }
+			return {
+				fiveHour: toPercentPeriod(fiveHourWindow, snapshotTimestamp),
+				oneWeek: toPercentPeriod(oneWeekWindow, snapshotTimestamp),
+			};
+		} catch {
+			// Ignore malformed lines and keep searching backward.
+		}
+	}
 
-  return null;
+	return null;
 }
 
 function pickRateLimitWindow(
-  windows: CodexRateLimitWindow[],
-  targetMinutes: number
+	windows: CodexRateLimitWindow[],
+	targetMinutes: number,
 ): CodexRateLimitWindow | null {
-  let best: CodexRateLimitWindow | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
+	let best: CodexRateLimitWindow | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (const window of windows) {
-    const duration = window.window_minutes;
+	for (const window of windows) {
+		const duration = window.window_minutes;
 
-    if (typeof duration !== 'number') continue;
+		if (typeof duration !== "number") continue;
 
-    const distance = Math.abs(duration - targetMinutes);
+		const distance = Math.abs(duration - targetMinutes);
 
-    if (distance < bestDistance) {
-      best = window;
-      bestDistance = distance;
-    }
-  }
+		if (distance < bestDistance) {
+			best = window;
+			bestDistance = distance;
+		}
+	}
 
-  return best;
+	return best;
 }
 
 function toPercentPeriod(
-  window: CodexRateLimitWindow | null,
-  snapshotTimestamp?: Date
+	window: CodexRateLimitWindow | null,
+	snapshotTimestamp?: Date,
 ): UsagePeriod | null {
-  if (!window || typeof window.used_percent !== 'number') {
-    return null;
-  }
+	if (!window || typeof window.used_percent !== "number") {
+		return null;
+	}
 
-  // If we know when the snapshot was taken and how long the window is, check
-  // whether the window has already reset.  A snapshot older than one full
-  // window period means the usage figure it carries belongs to a previous
-  // window and is no longer meaningful – return null so the status bar shows
-  // "no data" rather than a stale (potentially very wrong) percentage.
-  if (snapshotTimestamp && typeof window.window_minutes === 'number') {
-    const windowMs = window.window_minutes * 60_000;
-    const snapshotAge = Date.now() - snapshotTimestamp.getTime();
+	// If we know when the snapshot was taken and how long the window is, check
+	// whether the window has already reset.  A snapshot older than one full
+	// window period means the usage figure it carries belongs to a previous
+	// window and is no longer meaningful – return null so the status bar shows
+	// "no data" rather than a stale (potentially very wrong) percentage.
+	if (snapshotTimestamp && typeof window.window_minutes === "number") {
+		const windowMs = window.window_minutes * 60_000;
+		const snapshotAge = Date.now() - snapshotTimestamp.getTime();
 
-    // Rate-limit windows are rolling (sliding): the window covering [T-W, T]
-    // at snapshot time has drifted to [now-W, now] today.  The fraction of the
-    // snapshot's data that still falls inside the current window is
-    // approximately (W - snapshotAge) / W.  Once less than half the original
-    // window is still relevant the snapshot is no longer a useful indicator of
-    // current utilisation – return null so the status bar shows "unavailable"
-    // rather than a misleading stale percentage.
-    if (snapshotAge >= windowMs / 2) {
-      return null;
-    }
+		// Rate-limit windows are rolling (sliding): the window covering [T-W, T]
+		// at snapshot time has drifted to [now-W, now] today.  The fraction of the
+		// snapshot's data that still falls inside the current window is
+		// approximately (W - snapshotAge) / W.  Once less than half the original
+		// window is still relevant the snapshot is no longer a useful indicator of
+		// current utilisation – return null so the status bar shows "unavailable"
+		// rather than a misleading stale percentage.
+		if (snapshotAge >= windowMs / 2) {
+			return null;
+		}
 
-    const resetsAt = parseResetTimestamp(window.resets_at)
+		const resetsAt = parseResetTimestamp(window.resets_at)
       ?? new Date(snapshotTimestamp.getTime() + windowMs);
 
-    return { used: window.used_percent, limit: 100, unit: 'percent', resetsAt };
-  }
+		return { used: window.used_percent, limit: 100, unit: "percent", resetsAt };
+	}
 
-  return { used: window.used_percent, limit: 100, unit: 'percent' };
+	return { used: window.used_percent, limit: 100, unit: "percent" };
 }
 
 function parseEventTimestamp(value: string | number | undefined): Date | undefined {
-  if (value === undefined) return undefined;
-  const date = typeof value === 'number'
-    ? new Date(value)
-    : new Date(value);
+	if (value === undefined) return undefined;
 
-  if (Number.isNaN(date.getTime())) {
-    return undefined;
-  }
+	const date = typeof value === "number"
+		? new Date(value)
+		: new Date(value);
 
-  return date;
+	if (Number.isNaN(date.getTime())) {
+		return undefined;
+	}
+
+	return date;
 }
 
 function parseResetTimestamp(value: string | number | null | undefined): Date | undefined {
-  if (value === undefined || value === null) return undefined;
+	if (value === undefined || value === null) return undefined;
 
-  const date = typeof value === 'number'
-    ? new Date(value * 1000)
-    : new Date(value);
+	const date = typeof value === "number"
+		? new Date(value * 1000)
+		: new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return undefined;
-  }
+	if (Number.isNaN(date.getTime())) {
+		return undefined;
+	}
 
-  return date;
+	return date;
 }

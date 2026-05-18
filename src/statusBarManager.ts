@@ -1,280 +1,281 @@
-import * as vscode from 'vscode';
-import { ProviderStatus, UsagePeriod } from './types';
+import * as vscode from "vscode";
+import { ProviderStatus, UsagePeriod } from "./types";
 
-const DOLLAR = '$';
-const CLAUDE_ICON = '✳';
-const CODEX_ICON = '◎';
+const DOLLAR = "$";
+const CLAUDE_ICON = "✳";
+const CODEX_ICON = "◎";
 
 export class StatusBarManager implements vscode.Disposable {
-  private readonly item: vscode.StatusBarItem;
-  private readonly errorCommand: string;
-  private readonly claudeCommand: string;
-  private readonly openaiCommand: string;
-  private lastRefreshed: Date | undefined;
-  private nextRefreshAt: Date | undefined;
-  private claudeStatus: ProviderStatus | null = null;
-  private openaiStatus: ProviderStatus | null = null;
+	private readonly item: vscode.StatusBarItem;
+	private readonly errorCommand: string;
+	private readonly claudeCommand: string;
+	private readonly openaiCommand: string;
+	private lastRefreshed: Date | undefined;
+	private nextRefreshAt: Date | undefined;
+	private claudeStatus: ProviderStatus | null = null;
+	private openaiStatus: ProviderStatus | null = null;
 
-  constructor(errorCommand: string, claudeCommand: string, openaiCommand: string) {
-    this.errorCommand = errorCommand;
-    this.claudeCommand = claudeCommand;
-    this.openaiCommand = openaiCommand;
+	constructor(errorCommand: string, claudeCommand: string, openaiCommand: string) {
+		this.errorCommand = errorCommand;
+		this.claudeCommand = claudeCommand;
+		this.openaiCommand = openaiCommand;
 
-    this.item = vscode.window.createStatusBarItem(
-      'ai-limits',
-      vscode.StatusBarAlignment.Right,
-      100
-    );
-  }
+		this.item = vscode.window.createStatusBarItem(
+			"ai-limits",
+			vscode.StatusBarAlignment.Right,
+			100,
+		);
+	}
 
-  setRefreshInfo(last: Date, next: Date): void {
-    this.lastRefreshed = last;
-    this.nextRefreshAt = next;
-  }
+	setRefreshInfo(last: Date, next: Date): void {
+		this.lastRefreshed = last;
+		this.nextRefreshAt = next;
+	}
 
-  updateClaude(status: ProviderStatus): void {
-    this.claudeStatus = status;
+	updateClaude(status: ProviderStatus): void {
+		this.claudeStatus = status;
 
-    this.render();
-  }
+		this.render();
+	}
 
-  updateOpenAI(status: ProviderStatus): void {
-    this.openaiStatus = status;
+	updateOpenAI(status: ProviderStatus): void {
+		this.openaiStatus = status;
 
-    this.render();
-  }
+		this.render();
+	}
 
-  private render(): void {
-    const claudeAvailable = this.claudeStatus !== null && this.claudeStatus.available;
-    const openaiAvailable = this.openaiStatus !== null && this.openaiStatus.available;
+	private render(): void {
+		const claudeAvailable = this.claudeStatus !== null && this.claudeStatus.available;
+		const openaiAvailable = this.openaiStatus !== null && this.openaiStatus.available;
 
-    if (!claudeAvailable && !openaiAvailable) {
-      this.item.hide();
+		if (!claudeAvailable && !openaiAvailable) {
+			this.item.hide();
 
-      return;
-    }
+			return;
+		}
 
-    const parts: string[] = [];
+		const parts: string[] = [];
 
-    if (claudeAvailable) {
-      parts.push(this.buildText(CLAUDE_ICON, this.claudeStatus!));
-    }
+		if (claudeAvailable) {
+			parts.push(this.buildText(CLAUDE_ICON, this.claudeStatus!));
+		}
 
-    if (openaiAvailable) {
-      parts.push(this.buildText(CODEX_ICON, this.openaiStatus!));
-    }
+		if (openaiAvailable) {
+			parts.push(this.buildText(CODEX_ICON, this.openaiStatus!));
+		}
 
-    this.item.text = parts.join('  ');
-    this.item.tooltip = this.buildCombinedTooltip(claudeAvailable, openaiAvailable);
-    this.item.command = this.resolveCommand(claudeAvailable, openaiAvailable);
+		this.item.text = parts.join("  ");
+		this.item.tooltip = this.buildCombinedTooltip(claudeAvailable, openaiAvailable);
+		this.item.command = this.resolveCommand(claudeAvailable, openaiAvailable);
 
-    this.item.show();
-  }
+		this.item.show();
+	}
 
-  private resolveCommand(claudeAvailable: boolean, openaiAvailable: boolean): string {
-    const claudeHasError = claudeAvailable && Boolean(this.claudeStatus?.error);
-    const openaiHasError = openaiAvailable && Boolean(this.openaiStatus?.error);
+	private resolveCommand(claudeAvailable: boolean, openaiAvailable: boolean): string {
+		const claudeHasError = claudeAvailable && Boolean(this.claudeStatus?.error);
+		const openaiHasError = openaiAvailable && Boolean(this.openaiStatus?.error);
 
-    if (claudeHasError || openaiHasError) {
-      return this.errorCommand;
-    }
+		if (claudeHasError || openaiHasError) {
+			return this.errorCommand;
+		}
 
-    if (claudeAvailable && !openaiAvailable) {
-      return this.claudeCommand;
-    }
+		if (claudeAvailable && !openaiAvailable) {
+			return this.claudeCommand;
+		}
 
-    if (!claudeAvailable && openaiAvailable) {
-      return this.openaiCommand;
-    }
+		if (!claudeAvailable && openaiAvailable) {
+			return this.openaiCommand;
+		}
 
-    return this.errorCommand;
-  }
+		return this.errorCommand;
+	}
 
-  private buildCombinedTooltip(claudeAvailable: boolean, openaiAvailable: boolean): vscode.MarkdownString {
-    if (claudeAvailable && !openaiAvailable) {
-      return this.buildTooltip('Claude', this.claudeStatus!);
-    }
+	private buildCombinedTooltip(claudeAvailable: boolean, openaiAvailable: boolean): vscode.MarkdownString {
+		if (claudeAvailable && !openaiAvailable) {
+			return this.buildTooltip("Claude", this.claudeStatus!);
+		}
 
-    if (!claudeAvailable && openaiAvailable) {
-      return this.buildTooltip('Codex', this.openaiStatus!);
-    }
+		if (!claudeAvailable && openaiAvailable) {
+			return this.buildTooltip("Codex", this.openaiStatus!);
+		}
 
-    const claudeMd = this.buildTooltip('Claude', this.claudeStatus!);
-    const openaiMd = this.buildTooltip('Codex', this.openaiStatus!);
-    const combined = new vscode.MarkdownString();
+		const claudeMd = this.buildTooltip("Claude", this.claudeStatus!);
+		const openaiMd = this.buildTooltip("Codex", this.openaiStatus!);
+		const combined = new vscode.MarkdownString();
 
-    combined.isTrusted = false;
+		combined.isTrusted = false;
 
-    combined.appendMarkdown(claudeMd.value + '\n\n---\n\n' + openaiMd.value);
+		combined.appendMarkdown(claudeMd.value + "\n\n---\n\n" + openaiMd.value);
 
-    return combined;
-  }
+		return combined;
+	}
 
-  private buildText(icon: string, status: ProviderStatus): string {
-    if (!status.authenticated) {
-      return `${icon} Please log in`;
-    }
+	private buildText(icon: string, status: ProviderStatus): string {
+		if (!status.authenticated) {
+			return `${icon} Please log in`;
+		}
 
-    if (status.error) {
-      return `${icon} error`;
-    }
+		if (status.error) {
+			return `${icon} error`;
+		}
 
-    if (!status.budget) {
-      return `${icon} ...`;
-    }
+		if (!status.budget) {
+			return `${icon} ...`;
+		}
 
-    if (!hasUsableBudget(status)) {
-      return `${icon} No usage yet`;
-    }
+		if (!hasUsableBudget(status)) {
+			return `${icon} No usage yet`;
+		}
 
-    const parts: string[] = [icon];
+		const parts: string[] = [icon];
 
-    if (status.budget.fiveHour !== null) {
-      parts.push(`5h: ${this.formatCompact(status.budget.fiveHour)}`);
-    }
+		if (status.budget.fiveHour !== null) {
+			parts.push(`5h: ${this.formatCompact(status.budget.fiveHour)}`);
+		}
 
-    if (status.budget.oneWeek !== null) {
-      parts.push(`7d: ${this.formatCompact(status.budget.oneWeek)}`);
-    }
+		if (status.budget.oneWeek !== null) {
+			parts.push(`7d: ${this.formatCompact(status.budget.oneWeek)}`);
+		}
 
-    return parts.join(' ');
-  }
+		return parts.join(" ");
+	}
 
-  private buildTooltip(label: string, status: ProviderStatus): vscode.MarkdownString {
-    const md = new vscode.MarkdownString();
+	private buildTooltip(label: string, status: ProviderStatus): vscode.MarkdownString {
+		const md = new vscode.MarkdownString();
 
-    md.isTrusted = false;
+		md.isTrusted = false;
 
-    if (!status.authenticated) {
-      md.appendMarkdown(`**${label}**: Please log in via the companion extension.`);
-      return md;
-    }
+		if (!status.authenticated) {
+			md.appendMarkdown(`**${label}**: Please log in via the companion extension.`);
+			return md;
+		}
 
-    if (status.error) {
-      md.appendMarkdown(`**${label} error:** ${escapeMarkdown(status.error)}`);
-      return md;
-    }
+		if (status.error) {
+			md.appendMarkdown(`**${label} error:** ${escapeMarkdown(status.error)}`);
+			return md;
+		}
 
-    if (!status.budget) {
-      md.appendMarkdown(`**${label}**: Fetching usage…`);
-      return md;
-    }
+		if (!status.budget) {
+			md.appendMarkdown(`**${label}**: Fetching usage…`);
+			return md;
+		}
 
-    if (!hasUsableBudget(status)) {
-      md.appendMarkdown(`**${label}**: No usage has been recorded yet.\n\n`);
-      md.appendMarkdown(formatRefreshInfo(this.lastRefreshed, this.nextRefreshAt));
+		if (!hasUsableBudget(status)) {
+			md.appendMarkdown(`**${label}**: No usage has been recorded yet.\n\n`);
+			md.appendMarkdown(formatRefreshInfo(this.lastRefreshed, this.nextRefreshAt));
 
-      return md;
-    }
+			return md;
+		}
 
-    md.appendMarkdown(`### ${label} Usage\n\n`);
+		md.appendMarkdown(`### ${label} Usage\n\n`);
 
-    if (status.budget.fiveHour !== null) {
-      const value = this.formatDetailed(status.budget.fiveHour);
-      const reset = formatResetTime(status.budget.fiveHour.resetsAt);
+		if (status.budget.fiveHour !== null) {
+			const value = this.formatDetailed(status.budget.fiveHour);
+			const reset = formatResetTime(status.budget.fiveHour.resetsAt);
 
-      md.appendMarkdown(`**Last 5 hours:** ${value}\n\n${reset}`);
-    } else {
-      md.appendMarkdown(`**Last 5 hours:** unavailable\n\n`);
-    }
+			md.appendMarkdown(`**Last 5 hours:** ${value}\n\n${reset}`);
+		} else {
+			md.appendMarkdown("**Last 5 hours:** unavailable\n\n");
+		}
 
-    if (status.budget.oneWeek !== null) {
-      const value = this.formatDetailed(status.budget.oneWeek);
-      const reset = formatResetTime(status.budget.oneWeek.resetsAt);
+		if (status.budget.oneWeek !== null) {
+			const value = this.formatDetailed(status.budget.oneWeek);
+			const reset = formatResetTime(status.budget.oneWeek.resetsAt);
 
-      md.appendMarkdown(`**Last 7 days:** ${value}\n\n${reset}`);
-    } else {
-      md.appendMarkdown(`**Last 7 days:** unavailable\n\n`);
-    }
+			md.appendMarkdown(`**Last 7 days:** ${value}\n\n${reset}`);
+		} else {
+			md.appendMarkdown("**Last 7 days:** unavailable\n\n");
+		}
 
-    md.appendMarkdown(formatRefreshInfo(this.lastRefreshed, this.nextRefreshAt));
+		md.appendMarkdown(formatRefreshInfo(this.lastRefreshed, this.nextRefreshAt));
 
-    return md;
-  }
+		return md;
+	}
 
-  private formatCompact(period: UsagePeriod): string {
-    if (period.unit === 'percent') {
-      return `${period.used.toFixed(0)}%`;
-    }
+	private formatCompact(period: UsagePeriod): string {
+		if (period.unit === "percent") {
+			return `${period.used.toFixed(0)}%`;
+		}
 
-    return `${DOLLAR}${period.used.toFixed(2)}`;
-  }
+		return `${DOLLAR}${period.used.toFixed(2)}`;
+	}
 
-  private formatDetailed(period: UsagePeriod): string {
-    if (period.unit === 'percent') {
-      const limit = period.limit !== null ? `/${period.limit.toFixed(0)}%` : '';
-      return `${period.used.toFixed(1)}%${limit}`;
-    }
+	private formatDetailed(period: UsagePeriod): string {
+		if (period.unit === "percent") {
+			const limit = period.limit !== null ? `/${period.limit.toFixed(0)}%` : "";
 
-    const limit = period.limit !== null ? `/${DOLLAR}${period.limit.toFixed(2)}` : '';
+			return `${period.used.toFixed(1)}%${limit}`;
+		}
 
-    return `${DOLLAR}${period.used.toFixed(4)}${limit}`;
-  }
+		const limit = period.limit !== null ? `/${DOLLAR}${period.limit.toFixed(2)}` : "";
 
-  dispose(): void {
-    this.item.dispose();
-  }
+		return `${DOLLAR}${period.used.toFixed(4)}${limit}`;
+	}
+
+	dispose(): void {
+		this.item.dispose();
+	}
 }
 
 function formatRefreshInfo(last: Date | undefined, next: Date | undefined): string {
-  if (!last) return '';
+	if (!last) return "";
 
-  const now = Date.now();
-  const agoMs = now - last.getTime();
-  const agoMin = Math.floor(agoMs / 60_000);
-  const agoText = agoMin < 1 ? 'just now' : `${agoMin}m ago`;
+	const now = Date.now();
+	const agoMs = now - last.getTime();
+	const agoMin = Math.floor(agoMs / 60_000);
+	const agoText = agoMin < 1 ? "just now" : `${agoMin}m ago`;
 
-  if (!next) return `*Updated: ${agoText}*\n\n`;
+	if (!next) return `*Updated: ${agoText}*\n\n`;
 
-  const inMs = next.getTime() - now;
-  const inMin = Math.max(0, Math.round(inMs / 60_000));
-  const nextText = inMin < 1 ? 'soon' : `in ${inMin}m`;
+	const inMs = next.getTime() - now;
+	const inMin = Math.max(0, Math.round(inMs / 60_000));
+	const nextText = inMin < 1 ? "soon" : `in ${inMin}m`;
 
-  return `*Updated: ${agoText} · Next refresh: ${nextText}*\n\n`;
+	return `*Updated: ${agoText} · Next refresh: ${nextText}*\n\n`;
 }
 
 function hasUsableBudget(status: ProviderStatus): boolean {
-  return Boolean(status.budget && (status.budget.fiveHour !== null || status.budget.oneWeek !== null));
+	return Boolean(status.budget && (status.budget.fiveHour !== null || status.budget.oneWeek !== null));
 }
 
 function escapeMarkdown(text: string): string {
-  return text.replace(/[\\`*_{}[\]()#+\-.!]/g, '\\$&');
+	return text.replace(/[\\`*_{}[\]()#+\-.!]/g, "\\$&");
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function formatResetTime(resetsAt: Date | undefined): string {
-  if (!resetsAt) return '';
+	if (!resetsAt) return "";
 
-  const now = Date.now();
-  const diff = resetsAt.getTime() - now;
+	const now = Date.now();
+	const diff = resetsAt.getTime() - now;
 
-  let relative: string;
+	let relative: string;
 
-  if (diff <= 0) {
-    relative = 'soon';
-  } else {
-    const totalMinutes = Math.round(diff / 60_000);
-    const days = Math.floor(totalMinutes / 1440);
-    const hours = Math.floor((totalMinutes % 1440) / 60);
-    const minutes = totalMinutes % 60;
+	if (diff <= 0) {
+		relative = "soon";
+	} else {
+		const totalMinutes = Math.round(diff / 60_000);
+		const days = Math.floor(totalMinutes / 1440);
+		const hours = Math.floor((totalMinutes % 1440) / 60);
+		const minutes = totalMinutes % 60;
 
-    if (days > 0) {
-      relative = `in ${days}d ${hours}h`;
-    } else if (hours > 0) {
-      relative = `in ${hours}h ${minutes}m`;
-    } else {
-      relative = `in ${minutes}m`;
-    }
-  }
+		if (days > 0) {
+			relative = `in ${days}d ${hours}h`;
+		} else if (hours > 0) {
+			relative = `in ${hours}h ${minutes}m`;
+		} else {
+			relative = `in ${minutes}m`;
+		}
+	}
 
-  const month = MONTHS[resetsAt.getMonth()];
-  const day = resetsAt.getDate();
-  const h = resetsAt.getHours();
-  const m = resetsAt.getMinutes().toString().padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 || 12;
-  const absolute = `${month} ${day} at ${hour12}:${m} ${ampm}`;
+	const month = MONTHS[resetsAt.getMonth()];
+	const day = resetsAt.getDate();
+	const h = resetsAt.getHours();
+	const m = resetsAt.getMinutes().toString().padStart(2, "0");
+	const ampm = h >= 12 ? "PM" : "AM";
+	const hour12 = h % 12 || 12;
+	const absolute = `${month} ${day} at ${hour12}:${m} ${ampm}`;
 
-  return `**Resets:** ${absolute} (${relative})\n\n`;
+	return `**Resets:** ${absolute} (${relative})\n\n`;
 }

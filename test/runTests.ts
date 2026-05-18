@@ -1,23 +1,23 @@
-import * as path from 'path';
-import { runTests } from '@vscode/test-electron';
+import { runTests } from "@vscode/test-electron";
+import * as path from "path";
 
 function sanitizeLaunchEnv(): void {
-  // When tests are started from inside VS Code, these inherited flags can cause
-  // the downloaded test host to boot as plain Electron/Node instead of VS Code.
-  delete process.env.ELECTRON_RUN_AS_NODE;
-  delete process.env.VSCODE_CLI;
+	// When tests are started from inside VS Code, these inherited flags can cause
+	// the downloaded test host to boot as plain Electron/Node instead of VS Code.
+	delete process.env.ELECTRON_RUN_AS_NODE;
+	delete process.env.VSCODE_CLI;
 }
 
 async function main(): Promise<void> {
-  sanitizeLaunchEnv();
+	sanitizeLaunchEnv();
 
-  const extensionDevelopmentPath = path.resolve(__dirname, '../../');
-  const extensionTestsPath = path.resolve(__dirname, './suite/index');
+	const extensionDevelopmentPath = path.resolve(__dirname, "../../");
+	const extensionTestsPath = path.resolve(__dirname, "./suite/index");
 
-  await runTests({ extensionDevelopmentPath, extensionTestsPath });
+	await runTests({ extensionDevelopmentPath, extensionTestsPath });
 }
 
 main().catch((err: unknown) => {
-  console.error('Failed to run tests:', err);
-  process.exit(1);
+	console.error("Failed to run tests:", err);
+	process.exit(1);
 });
