@@ -73,58 +73,82 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	statusBar.updateClaude(loadingStatus);
 	statusBar.updateOpenAI(loadingStatus);
 
+	// In-flight guard: if a refresh is already running, callers join the existing
+	// promise rather than starting a duplicate set of API calls.
+	let activeRefreshPromise: Promise<boolean> | undefined;
+
+	// Once both companion extensions are confirmed present, extension-list changes
+	// are irrelevant — only auth-session changes warrant a refresh.
+	let allCompanionsAvailable = false;
+
 	// Returns true if any companion extension was not yet registered (retry needed).
 	async function refresh(): Promise<boolean> {
-		output.appendLine(`[${new Date().toLocaleTimeString()}] refresh: starting`);
-
-		const timeout = (ms: number, label: string): Promise<never> =>
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-			);
-
-		const [claudeResult, openaiResult] = await Promise.allSettled([
-			Promise.race([claude.getStatus(), timeout(14_000, "claude.getStatus()")]),
-			Promise.race([openai.getStatus(), timeout(14_000, "openai.getStatus()")]),
-		]);
-
-		output.appendLine(`[${new Date().toLocaleTimeString()}] refresh: allSettled resolved`);
-
-		const claudeStatus = claudeResult.status === "fulfilled"
-			? claudeResult.value
-			: { available: true, authenticated: false, budget: null, error: String(claudeResult.reason) };
-
-		const openaiStatus = openaiResult.status === "fulfilled"
-			? openaiResult.value
-			: { available: true, authenticated: false, budget: null, error: String(openaiResult.reason) };
-
-		const now = new Date();
-
-		statusBar.setRefreshInfo(now, new Date(now.getTime() + REFRESH_INTERVAL_MS));
-		statusBar.updateClaude(claudeStatus);
-		statusBar.updateOpenAI(openaiStatus);
-
-		const timestamp = new Date().toLocaleTimeString();
-
-		output.appendLine(`[${timestamp}] Claude: available=${claudeStatus.available} authenticated=${claudeStatus.authenticated} budget=${JSON.stringify(claudeStatus.budget)} error=${claudeStatus.error ?? "none"}`);
-		output.appendLine(`[${timestamp}] Codex:  available=${openaiStatus.available} authenticated=${openaiStatus.authenticated} budget=${JSON.stringify(openaiStatus.budget)} error=${openaiStatus.error ?? "none"}`);
-
-		if (claudeStatus.error) {
-			output.appendLine(`[${timestamp}] Claude error: ${claudeStatus.error}`);
-		} else if (!claudeStatus.available) {
-			output.appendLine(`[${timestamp}] Claude Code extension not found — status bar item hidden`);
-		} else if (!claudeStatus.authenticated) {
-			output.appendLine(`[${timestamp}] Claude Code: no credentials found — please log in`);
+		if (activeRefreshPromise !== undefined) {
+			return activeRefreshPromise;
 		}
 
-		if (openaiStatus.error) {
-			output.appendLine(`[${timestamp}] Codex error: ${openaiStatus.error}`);
-		} else if (!openaiStatus.available) {
-			output.appendLine(`[${timestamp}] Codex (openai.chatgpt) extension not found — status bar item hidden`);
-		} else if (!openaiStatus.authenticated) {
-			output.appendLine(`[${timestamp}] Codex: no credentials found — please log in`);
-		}
+		activeRefreshPromise = (async (): Promise<boolean> => {
+			output.appendLine(`[${new Date().toLocaleTimeString()}] refresh: starting`);
 
-		return !claudeStatus.available || !openaiStatus.available;
+			const timeout = (ms: number, label: string): Promise<never> =>
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+				);
+
+			const [claudeResult, openaiResult] = await Promise.allSettled([
+				Promise.race([claude.getStatus(), timeout(14_000, "claude.getStatus()")]),
+				Promise.race([openai.getStatus(), timeout(14_000, "openai.getStatus()")]),
+			]);
+
+			output.appendLine(`[${new Date().toLocaleTimeString()}] refresh: allSettled resolved`);
+
+			const claudeStatus = claudeResult.status === "fulfilled"
+				? claudeResult.value
+				: { available: true, authenticated: false, budget: null, error: String(claudeResult.reason) };
+
+			const openaiStatus = openaiResult.status === "fulfilled"
+				? openaiResult.value
+				: { available: true, authenticated: false, budget: null, error: String(openaiResult.reason) };
+
+			const now = new Date();
+
+			statusBar.setRefreshInfo(now, new Date(now.getTime() + REFRESH_INTERVAL_MS));
+			statusBar.updateClaude(claudeStatus);
+			statusBar.updateOpenAI(openaiStatus);
+
+			const timestamp = new Date().toLocaleTimeString();
+
+			output.appendLine(`[${timestamp}] Claude: available=${claudeStatus.available} authenticated=${claudeStatus.authenticated} budget=${JSON.stringify(claudeStatus.budget)} error=${claudeStatus.error ?? "none"}`);
+			output.appendLine(`[${timestamp}] Codex:  available=${openaiStatus.available} authenticated=${openaiStatus.authenticated} budget=${JSON.stringify(openaiStatus.budget)} error=${openaiStatus.error ?? "none"}`);
+
+			if (claudeStatus.error) {
+				output.appendLine(`[${timestamp}] Claude error: ${claudeStatus.error}`);
+			} else if (!claudeStatus.available) {
+				output.appendLine(`[${timestamp}] Claude Code extension not found — status bar item hidden`);
+			} else if (!claudeStatus.authenticated) {
+				output.appendLine(`[${timestamp}] Claude Code: no credentials found — please log in`);
+			}
+
+			if (openaiStatus.error) {
+				output.appendLine(`[${timestamp}] Codex error: ${openaiStatus.error}`);
+			} else if (!openaiStatus.available) {
+				output.appendLine(`[${timestamp}] Codex (openai.chatgpt) extension not found — status bar item hidden`);
+			} else if (!openaiStatus.authenticated) {
+				output.appendLine(`[${timestamp}] Codex: no credentials found — please log in`);
+			}
+
+			const anyUnavailable = !claudeStatus.available || !openaiStatus.available;
+
+			allCompanionsAvailable = !anyUnavailable;
+
+			return anyUnavailable;
+		})();
+
+		try {
+			return await activeRefreshPromise;
+		} finally {
+			activeRefreshPromise = undefined;
+		}
 	}
 
 	// Debounced refresh for event-driven triggers to avoid back-to-back API
@@ -145,6 +169,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	});
 
 	const debouncedRefresh = (): void => {
+		// Once both companions are confirmed present, extension-list changes are
+		// not actionable — skip the debounce to avoid unnecessary API calls.
+		if (allCompanionsAvailable) return;
+
 		if (debounceTimer !== undefined) {
 			clearTimeout(debounceTimer);
 		}

@@ -17,10 +17,10 @@ import * as os from "os";
 import * as path from "path";
 import { BudgetInfo, UsagePeriod } from "./types";
 
-/** How long a cached result is considered fresh.  Slightly less than the
- *  5-minute poll interval so a single window's write is always reused by
- *  other windows before the next scheduled refresh. */
-export const CACHE_TTL_MS = 4.5 * 60 * 1000;
+/** How long a cached result is considered fresh. Matches the 5-minute poll
+ *  interval so the cache never expires between polls, closing the window
+ *  where a debounce-triggered refresh could slip in before the periodic one. */
+export const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export const CACHE_PATH = path.join(os.homedir(), ".claude", ".ai-limits-cache.json");
 
