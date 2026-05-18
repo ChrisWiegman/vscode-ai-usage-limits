@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: Prevent duplicate Claude API calls caused by concurrent refresh triggers and broad extension-change events
-time: 2026-05-18T00:34:39.000000-05:00
