@@ -43,6 +43,8 @@ interface SerializedBudget {
 interface CacheEntry {
 	fetchedAt: string;
 	budget: SerializedBudget;
+	/** ISO timestamp set when the API returned 429; skip fetches until this time. */
+	backoffUntil?: string;
 }
 
 type CacheFile = Record<string, CacheEntry>;
@@ -57,14 +59,16 @@ export function tokenKey(token: string): string {
 	return crypto.createHash("sha256").update(token).digest("hex").slice(0, 16);
 }
 
-/** Returns a fresh cached BudgetInfo for this token, or null on miss/stale. */
+/** Returns a fresh cached BudgetInfo for this token, or null on miss/stale.
+ *  Returns an empty BudgetInfo (both periods null) when the last successful
+ *  fetch returned no data — callers must not retry the API for a cache hit. */
 export function readCache(key: string): BudgetInfo | null {
 	try {
 		const raw = fs.readFileSync(CACHE_PATH, "utf8");
 		const file = JSON.parse(raw) as CacheFile;
 		const entry = file[key];
 
-		if (!entry?.fetchedAt || !entry.budget) {
+		if (!entry?.fetchedAt) {
 			return null;
 		}
 
@@ -74,9 +78,7 @@ export function readCache(key: string): BudgetInfo | null {
 			return null;
 		}
 
-		const budget = deserializeBudget(entry.budget);
-
-		return hasUsableBudget(budget) ? budget : null;
+		return deserializeBudget(entry.budget ?? { fiveHour: null, oneWeek: null });
 	} catch {
 		return null;
 	}
@@ -95,10 +97,6 @@ export function clearCache(): void {
 /** Persists budget data to the shared cache file.  Failures are silently
  *  swallowed — the extension continues to work without cross-window dedup. */
 export function writeCache(key: string, budget: BudgetInfo): void {
-	if (!hasUsableBudget(budget)) {
-		return;
-	}
-
 	try {
 		let file: CacheFile = {};
 
@@ -113,6 +111,56 @@ export function writeCache(key: string, budget: BudgetInfo): void {
 		fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
 
 		file[key] = { fetchedAt: new Date().toISOString(), budget: serializeBudget(budget) };
+
+		fs.writeFileSync(CACHE_PATH, JSON.stringify(file), "utf8");
+	} catch {
+		// Cache write failure is non-fatal.
+	}
+}
+
+/** Returns the time until which API calls should be skipped for this token key,
+ *  or null if no active backoff entry exists. */
+export function getRateLimitBackoff(key: string): Date | null {
+	try {
+		const raw = fs.readFileSync(CACHE_PATH, "utf8");
+		const file = JSON.parse(raw) as CacheFile;
+		const entry = file[key];
+
+		if (!entry?.backoffUntil) return null;
+
+		const until = new Date(entry.backoffUntil);
+
+		if (Number.isNaN(until.getTime()) || until <= new Date()) return null;
+
+		return until;
+	} catch {
+		return null;
+	}
+}
+
+/** Writes a rate-limit backoff marker so all windows skip the API until `until`.
+ *  Any previously cached budget data is preserved so callers can still display it. */
+export function writeRateLimitBackoff(key: string, until: Date): void {
+	try {
+		let file: CacheFile = {};
+
+		try {
+			const raw = fs.readFileSync(CACHE_PATH, "utf8");
+
+			file = JSON.parse(raw) as CacheFile;
+		} catch {
+			// File absent or corrupt — start fresh.
+		}
+
+		fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
+
+		const existing = file[key];
+
+		file[key] = {
+			fetchedAt: existing?.fetchedAt ?? new Date().toISOString(),
+			budget: existing?.budget ?? { fiveHour: null, oneWeek: null },
+			backoffUntil: until.toISOString(),
+		};
 
 		fs.writeFileSync(CACHE_PATH, JSON.stringify(file), "utf8");
 	} catch {
@@ -154,8 +202,4 @@ function deserializeBudget(b: SerializedBudget): BudgetInfo {
 		fiveHour: b.fiveHour ? deserializePeriod(b.fiveHour) : null,
 		oneWeek: b.oneWeek ? deserializePeriod(b.oneWeek) : null,
 	};
-}
-
-function hasUsableBudget(budget: BudgetInfo): boolean {
-	return budget.fiveHour !== null || budget.oneWeek !== null;
 }

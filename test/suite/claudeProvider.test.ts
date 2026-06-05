@@ -210,24 +210,30 @@ suite("ClaudeProvider", () => {
 		assert.strictEqual(budget.oneWeek!.used, 42);
 	});
 
-	test("surfaces error when OAuth response has no utilization data in either window", async () => {
+	test("returns null periods (no error) when OAuth response has null utilization in both windows", async () => {
 		getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
 		readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-test" } }));
 		fetchStub.resolves(fakeResponse({ five_hour: { utilization: null }, seven_day: { utilization: null } }));
 
 		const status = await provider.getStatus();
 		assert.strictEqual(status.authenticated, true);
-		assert.ok(status.error !== null, "should surface an error when no utilization data");
+		assert.strictEqual(status.error, null, "null utilization should not surface as an error");
+		assert.ok(status.budget !== null);
+		assert.strictEqual(status.budget!.fiveHour, null);
+		assert.strictEqual(status.budget!.oneWeek, null);
 	});
 
-	test("surfaces error when OAuth response is in an unexpected format", async () => {
+	test("returns null periods (no error) when OAuth response is in an unexpected format", async () => {
 		getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
 		readFileSyncStub.returns(JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-test" } }));
 		fetchStub.resolves(fakeResponse({ data: [] }));
 
 		const status = await provider.getStatus();
 		assert.strictEqual(status.authenticated, true);
-		assert.ok(status.error !== null, "should surface an error for unrecognised response format");
+		assert.strictEqual(status.error, null, "unrecognised response format should not surface as an error");
+		assert.ok(status.budget !== null);
+		assert.strictEqual(status.budget!.fiveHour, null);
+		assert.strictEqual(status.budget!.oneWeek, null);
 	});
 
 	test("falls back to local Claude project JSONL when usage API is unavailable", async () => {

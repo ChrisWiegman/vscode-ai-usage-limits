@@ -113,7 +113,7 @@ suite("OpenAIProvider", () => {
 
 		assert.strictEqual(budget.fiveHour, null);
 		assert.strictEqual(budget.oneWeek, null);
-		assert.strictEqual(writeFileSyncStub.called, false, "should not cache all-null budgets");
+		assert.strictEqual(writeFileSyncStub.called, true, "should cache null budgets to avoid repeated API calls");
 	});
 
 	test("returns cached budget without hitting the network when cache is fresh", async () => {

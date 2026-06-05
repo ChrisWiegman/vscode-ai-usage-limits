@@ -18,8 +18,8 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { fetchWithRetry } from "../fetchWithRetry";
-import { readCache, tokenKey, writeCache } from "../sharedCache";
+import { RateLimitError, fetchWithRetry } from "../fetchWithRetry";
+import { getRateLimitBackoff, readCache, tokenKey, writeCache, writeRateLimitBackoff } from "../sharedCache";
 import { BudgetInfo, ProviderStatus, UsagePeriod } from "../types";
 
 const EXTENSION_ID = "anthropic.claude-code";
@@ -144,17 +144,34 @@ export class ClaudeProvider {
 
 	async fetchBudget(accessToken: string): Promise<BudgetInfo> {
 		const key = tokenKey(accessToken);
+
+		const backoffUntil = getRateLimitBackoff(key);
+
+		if (backoffUntil !== null) {
+			throw new RateLimitError(backoffUntil);
+		}
+
 		const cached = readCache(key);
 
 		if (cached !== null) {
 			return cached;
 		}
 
-		const budget = await this.fetchFreshBudget(accessToken);
+		try {
+			const budget = await this.fetchFreshBudget(accessToken);
 
-		writeCache(key, budget);
+			writeCache(key, budget);
 
-		return budget;
+			return budget;
+		} catch (err) {
+			if (err instanceof RateLimitError) {
+				const until = err.retryAfter ?? new Date(Date.now() + 5 * 60 * 1000);
+
+				writeRateLimitBackoff(key, until);
+			}
+
+			throw err;
+		}
 	}
 
 	private async fetchFreshBudget(accessToken: string): Promise<BudgetInfo> {
@@ -216,12 +233,6 @@ export class ClaudeProvider {
 		const data = (await response.json()) as ClaudeOAuthUsageResponse;
 		const fiveHour = extractOAuthUsagePeriod(data.five_hour);
 		const oneWeek = extractOAuthUsagePeriod(data.seven_day);
-
-		if (fiveHour === null && oneWeek === null) {
-			throw new Error(
-				`OAuth usage API returned OK but no utilization data — response: ${JSON.stringify(data)}`,
-			);
-		}
 
 		return { fiveHour, oneWeek };
 	}

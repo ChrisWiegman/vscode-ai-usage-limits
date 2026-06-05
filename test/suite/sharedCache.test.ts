@@ -99,7 +99,7 @@ suite("sharedCache", () => {
 		assert.deepStrictEqual(result!.fiveHour!.resetsAt, new Date(resetsAt));
 	});
 
-	test("treats all-null budgets as a cache miss", () => {
+	test("returns empty BudgetInfo (not null) for a fresh cache hit with null periods", () => {
 		const file = {
 			mykey: {
 				fetchedAt: new Date().toISOString(),
@@ -108,7 +108,10 @@ suite("sharedCache", () => {
 		};
 		readFileSyncStub.returns(JSON.stringify(file));
 
-		assert.strictEqual(readCache("mykey"), null);
+		const result = readCache("mykey");
+		assert.ok(result !== null, "should be a cache hit, not a miss");
+		assert.strictEqual(result!.fiveHour, null);
+		assert.strictEqual(result!.oneWeek, null);
 	});
 
 	// -------------------------------------------------------------------------
@@ -168,11 +171,12 @@ suite("sharedCache", () => {
 		assert.doesNotThrow(() => writeCache("mykey", { fiveHour: null, oneWeek: null }));
 	});
 
-	test("skips writing cache entries when both windows are null", () => {
+	test("writes cache entries even when both windows are null", () => {
+		readFileSyncStub.throws(new Error("ENOENT"));
 		writeCache("mykey", { fiveHour: null, oneWeek: null });
 
-		assert.strictEqual(mkdirSyncStub.called, false);
-		assert.strictEqual(writeFileSyncStub.called, false);
+		assert.strictEqual(mkdirSyncStub.calledOnce, true);
+		assert.strictEqual(writeFileSyncStub.calledOnce, true);
 	});
 
 	// -------------------------------------------------------------------------
