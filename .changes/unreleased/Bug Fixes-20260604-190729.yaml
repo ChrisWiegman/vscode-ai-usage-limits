@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Prevent repeated API calls when rate-limited by persisting a backoff marker to the shared cache; also cache null-budget responses so zero-usage accounts do not hammer the API on every poll cycle.
+time: 2026-06-04T19:07:29.807873-05:00
