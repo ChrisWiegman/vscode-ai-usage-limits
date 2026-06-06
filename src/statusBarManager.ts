@@ -10,15 +10,17 @@ export class StatusBarManager implements vscode.Disposable {
 	private readonly errorCommand: string;
 	private readonly claudeCommand: string;
 	private readonly openaiCommand: string;
+	private readonly bothCommand: string;
 	private lastRefreshed: Date | undefined;
 	private nextRefreshAt: Date | undefined;
 	private claudeStatus: ProviderStatus | null = null;
 	private openaiStatus: ProviderStatus | null = null;
 
-	constructor(errorCommand: string, claudeCommand: string, openaiCommand: string) {
+	constructor(errorCommand: string, claudeCommand: string, openaiCommand: string, bothCommand: string) {
 		this.errorCommand = errorCommand;
 		this.claudeCommand = claudeCommand;
 		this.openaiCommand = openaiCommand;
+		this.bothCommand = bothCommand;
 
 		this.item = vscode.window.createStatusBarItem(
 			"ai-limits",
@@ -87,7 +89,7 @@ export class StatusBarManager implements vscode.Disposable {
 			return this.openaiCommand;
 		}
 
-		return this.errorCommand;
+		return this.bothCommand;
 	}
 
 	private buildCombinedTooltip(claudeAvailable: boolean, openaiAvailable: boolean): vscode.MarkdownString {

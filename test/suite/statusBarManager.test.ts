@@ -17,6 +17,7 @@ suite("StatusBarManager", () => {
 			"ai-limits.showOutput",
 			"ai-limits.openClaudeSettings",
 			"ai-limits.openOpenAISettings",
+			"ai-limits.openSettings",
 		);
 	});
 

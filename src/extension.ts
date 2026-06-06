@@ -10,6 +10,7 @@ const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const SHOW_OUTPUT_COMMAND = "ai-limits.showOutput";
 const OPEN_CLAUDE_SETTINGS_COMMAND = "ai-limits.openClaudeSettings";
 const OPEN_OPENAI_SETTINGS_COMMAND = "ai-limits.openOpenAISettings";
+const OPEN_SETTINGS_COMMAND = "ai-limits.openSettings";
 const REFRESH_COMMAND = "ai-limits.refresh";
 const CLAUDE_SETTINGS_URL = "https://claude.ai/settings/usage";
 const OPENAI_SETTINGS_URL = "https://chatgpt.com/codex/settings/usage";
@@ -28,6 +29,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			SHOW_OUTPUT_COMMAND,
 			OPEN_CLAUDE_SETTINGS_COMMAND,
 			OPEN_OPENAI_SETTINGS_COMMAND,
+			OPEN_SETTINGS_COMMAND,
 		);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -51,6 +53,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			vscode.commands.registerCommand(OPEN_OPENAI_SETTINGS_COMMAND, () =>
 				vscode.env.openExternal(vscode.Uri.parse(OPENAI_SETTINGS_URL)),
 			),
+			vscode.commands.registerCommand(OPEN_SETTINGS_COMMAND, async () => {
+				const items = [
+					{ label: "Claude", description: "Open Claude usage settings", url: CLAUDE_SETTINGS_URL },
+					{ label: "Codex", description: "Open Codex usage settings", url: OPENAI_SETTINGS_URL },
+				];
+				const choice = await vscode.window.showQuickPick(items, { placeHolder: "Open usage settings for…" });
+
+				if (choice) {
+					await vscode.env.openExternal(vscode.Uri.parse(choice.url));
+				}
+			}),
 			vscode.commands.registerCommand(REFRESH_COMMAND, () => {
 				clearCache();
 				void refresh();
