@@ -155,7 +155,11 @@ export class OpenAIProvider {
 		// JWT tokens (Codex OAuth auth_mode) are not valid OpenAI Platform API
 		// keys. Use locally cached rate-limit windows as a fallback.
 		if (isJwt(accessToken)) {
-			return this.readBudgetFromCodexSessions() ?? { fiveHour: null, oneWeek: null };
+			// No rollout file (or no usable snapshot in it) means Codex has not
+			// recorded any usage yet. Report 0% rather than null so the status
+			// bar shows "5h: 0% 7d: 0%" the same way Claude does when its usage
+			// API reports a freshly-reset, unused window.
+			return this.readBudgetFromCodexSessions() ?? zeroPercentBudget();
 		}
 
 		const now = new Date();
@@ -251,6 +255,13 @@ export class OpenAIProvider {
 
 function notAvailable(): ProviderStatus {
 	return { available: false, authenticated: false, budget: null, error: null };
+}
+
+function zeroPercentBudget(): BudgetInfo {
+	return {
+		fiveHour: { used: 0, limit: 100, unit: "percent" },
+		oneWeek: { used: 0, limit: 100, unit: "percent" },
+	};
 }
 
 /** Returns true when the token is a JWT (Codex OAuth) rather than an API key. */

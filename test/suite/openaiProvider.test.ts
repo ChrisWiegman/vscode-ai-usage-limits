@@ -116,6 +116,19 @@ suite("OpenAIProvider", () => {
 		assert.strictEqual(writeFileSyncStub.called, true, "should cache null budgets to avoid repeated API calls");
 	});
 
+	test("returns zero-percent budget for JWT tokens when no Codex session data exists", async () => {
+		const existsSyncStub = sinon.stub(fs, "existsSync").returns(false);
+
+		const budget = await provider.fetchBudget("eyJ.fake.jwt");
+
+		assert.strictEqual(budget.fiveHour?.used, 0);
+		assert.strictEqual(budget.fiveHour?.unit, "percent");
+		assert.strictEqual(budget.oneWeek?.used, 0);
+		assert.strictEqual(budget.oneWeek?.unit, "percent");
+
+		existsSyncStub.restore();
+	});
+
 	test("returns cached budget without hitting the network when cache is fresh", async () => {
 		const token = "sk-openai-test";
 		const key = tokenKey(token);
