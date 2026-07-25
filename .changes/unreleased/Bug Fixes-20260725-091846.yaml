@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Codex now shows "5h: 0% 7d: 0%" instead of "No usage yet" when no usage has been recorded, matching Claude's status bar display.
+time: 2026-07-25T09:18:46.000000-05:00
