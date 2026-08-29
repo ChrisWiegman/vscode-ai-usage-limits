@@ -22,7 +22,7 @@
     "package.json"
   ],
   "engines": {
-    "vscode": "^1.125.0"
+    "vscode": "^1.134.0"
   },
   "categories": [
     "Other"
