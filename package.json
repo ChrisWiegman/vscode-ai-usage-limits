@@ -22,7 +22,7 @@
     "package.json"
   ],
   "engines": {
-    "vscode": "^1.134.0"
+    "vscode": "^1.138.0"
   },
   "categories": [
     "Other"
@@ -56,7 +56,7 @@
     "lint": "eslint src/ test/"
   },
   "overrides": {
-    "brace-expansion": "^5.0.9",
+    "brace-expansion": "^5.0.12",
     "diff": "^9.0.0",
     "serialize-javascript": "^7.1.0"
   },
@@ -65,14 +65,14 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.1.2",
     "@types/sinon": "^22.0.0",
-    "@types/vscode": "^1.134.0",
+    "@types/vscode": "^1.138.0",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^3.9.2",
+    "@vscode/vsce": "^4.0.0",
     "changie": "^1.26.0",
-    "eslint": "^10.9.1",
-    "mocha": "^11.8.0",
+    "eslint": "^10.11.0",
+    "mocha": "^12.0.2",
     "sinon": "^22.1.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.68.0"
+    "typescript-eslint": "^8.70.0"
   }
 }
