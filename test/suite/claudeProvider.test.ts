@@ -3,7 +3,15 @@ import * as vscode from "vscode";
 import * as sinon from "sinon";
 import childProcess = require("child_process");
 import fs = require("fs");
-import { ClaudeProvider, estimateClaudeUsageFromJsonl, extractToken } from "../../src/providers/claudeProvider";
+import refresher = require("../../src/claudeTokenRefresher");
+import {
+	ClaudeProvider,
+	EXPIRED_TOKEN_MESSAGE,
+	estimateClaudeUsageFromJsonl,
+	extractCredential,
+	extractToken,
+	isExpired,
+} from "../../src/providers/claudeProvider";
 import { RateLimitError } from "../../src/fetchWithRetry";
 import { tokenKey, CACHE_TTL_MS, CACHE_PATH } from "../../src/sharedCache";
 
@@ -17,6 +25,7 @@ suite("ClaudeProvider", () => {
 	let readdirSyncStub: sinon.SinonStub;
 	let fetchStub: sinon.SinonStub;
 	let writeFileSyncStub: sinon.SinonStub;
+	let refreshStub: sinon.SinonStub;
 
 	setup(() => {
 		provider = new ClaudeProvider();
@@ -35,6 +44,7 @@ suite("ClaudeProvider", () => {
 		readdirSyncStub = sinon.stub(fs, "readdirSync");
 		writeFileSyncStub = sinon.stub(fs, "writeFileSync");
 		fetchStub = sinon.stub(global, "fetch" as keyof typeof global);
+		refreshStub = sinon.stub(refresher, "refreshClaudeToken").resolves(false);
 	});
 
 	teardown(() => {
@@ -268,6 +278,77 @@ suite("ClaudeProvider", () => {
 		assert.ok(Math.abs(budget.oneWeek!.used - 1.2) < 0.0001);
 	});
 	// -------------------------------------------------------------------------
+	// getStatus – expired OAuth token
+	// -------------------------------------------------------------------------
+
+	/** Serves `creds()` for the credentials file and nothing else (no cache file). */
+	function serveCredentials(creds: ()=> unknown): void {
+		readFileSyncStub.callsFake((file: fs.PathOrFileDescriptor) => {
+			if (String(file).endsWith(".credentials.json")) return JSON.stringify(creds());
+			throw new Error("ENOENT");
+		});
+	}
+
+	test("renews an expired token through Claude Code, then uses the fresh one", async () => {
+		getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+		let creds = { claudeAiOauth: { accessToken: "sk-ant-oat01-old", expiresAt: Date.now() - 3_600_000 } };
+		serveCredentials(() => creds);
+		refreshStub.callsFake(async () => {
+			creds = { claudeAiOauth: { accessToken: "sk-ant-oat01-new", expiresAt: Date.now() + 8 * 3_600_000 } };
+			return true;
+		});
+		fetchStub.resolves(fakeResponse({ five_hour: { utilization: 12 }, seven_day: { utilization: 29 } }));
+
+		const status = await provider.getStatus();
+
+		assert.strictEqual(refreshStub.callCount, 1);
+		assert.strictEqual(status.error, null);
+		assert.strictEqual(status.budget!.oneWeek!.used, 29);
+		const auth = (fetchStub.firstCall.args[1] as RequestInit).headers as Record<string, string>;
+		assert.strictEqual(auth.Authorization, "Bearer sk-ant-oat01-new", "never sends the expired token");
+	});
+
+	test("says the sign-in expired (no API call, no rate-limit backoff) when renewal fails", async () => {
+		getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+		serveCredentials(() => ({ claudeAiOauth: { accessToken: "sk-ant-oat01-old", expiresAt: Date.now() - 1000 } }));
+		refreshStub.resolves(false);
+
+		const status = await provider.getStatus();
+
+		assert.strictEqual(status.authenticated, true);
+		assert.strictEqual(status.budget, null);
+		assert.strictEqual(status.error, EXPIRED_TOKEN_MESSAGE);
+		assert.ok(!status.error!.toLowerCase().includes("rate limit"));
+		assert.strictEqual(fetchStub.callCount, 0, "the expired token is not sent");
+		assert.strictEqual(writeFileSyncStub.callCount, 0, "no backoff is written");
+	});
+
+	test("says the sign-in expired when renewal answers but the token is still expired", async () => {
+		getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+		serveCredentials(() => ({ claudeAiOauth: { accessToken: "sk-ant-oat01-old", expiresAt: Date.now() - 1000 } }));
+		refreshStub.resolves(true);
+
+		const status = await provider.getStatus();
+
+		assert.strictEqual(status.error, EXPIRED_TOKEN_MESSAGE);
+		assert.strictEqual(fetchStub.callCount, 0);
+	});
+
+	test("does not try to renew a valid token, or one without a known expiry", async () => {
+		getExtensionStub.withArgs(EXTENSION_ID).returns(fakeExtension());
+		fetchStub.resolves(fakeResponse({ five_hour: { utilization: 1 }, seven_day: { utilization: 2 } }));
+
+		serveCredentials(() => ({ claudeAiOauth: { accessToken: "sk-ant-oat01-a", expiresAt: Date.now() + 3_600_000 } }));
+		assert.strictEqual((await provider.getStatus()).error, null);
+		serveCredentials(() => ({ claudeAiOauth: { accessToken: "sk-ant-oat01-b" } }));
+		assert.strictEqual((await provider.getStatus()).error, null);
+		serveCredentials(() => ({ apiKey: "sk-ant-api03-c" }));
+		await provider.getStatus();
+
+		assert.strictEqual(refreshStub.callCount, 0);
+	});
+
+	// -------------------------------------------------------------------------
 	// fetchBudget – shared cache
 	// -------------------------------------------------------------------------
 
@@ -344,6 +425,26 @@ suite("extractToken", () => {
 
 	test("returns undefined for empty object", () => {
 		assert.strictEqual(extractToken("{}"), undefined);
+	});
+});
+
+suite("extractCredential / isExpired", () => {
+	test("reads expiresAt alongside the OAuth token", () => {
+		assert.deepStrictEqual(
+			extractCredential(JSON.stringify({ claudeAiOauth: { accessToken: "t", expiresAt: 123 } })),
+			{ token: "t", expiresAt: 123 },
+		);
+		assert.deepStrictEqual(extractCredential(JSON.stringify({ claudeAiOauth: { accessToken: "t" } })), { token: "t" });
+		assert.deepStrictEqual(extractCredential(JSON.stringify({ apiKey: "k" })), { token: "k" });
+		assert.strictEqual(extractCredential("nope"), undefined);
+	});
+
+	test("expired includes a one-minute margin; unknown expiry is never expired", () => {
+		const now = 1_000_000_000_000;
+		assert.strictEqual(isExpired({ token: "t", expiresAt: now - 1 }, now), true);
+		assert.strictEqual(isExpired({ token: "t", expiresAt: now + 30_000 }, now), true);
+		assert.strictEqual(isExpired({ token: "t", expiresAt: now + 120_000 }, now), false);
+		assert.strictEqual(isExpired({ token: "t" }, now), false);
 	});
 });
 

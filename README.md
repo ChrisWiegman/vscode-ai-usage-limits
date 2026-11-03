@@ -55,7 +55,7 @@ Clicking a status bar item opens the corresponding usage/settings page in your b
    - **Codex / ChatGPT**: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`).
 3. The extension resolves usage data from the most reliable source available:
    - **Claude API key auth**: `GET https://api.anthropic.com/v1/usage` with `start_time` / `end_time`
-   - **Claude OAuth auth**: `GET https://api.anthropic.com/api/oauth/usage` for 5-hour and 7-day utilization percentages
+   - **Claude OAuth auth**: `GET https://api.anthropic.com/api/oauth/usage` for 5-hour and 7-day utilization percentages. If the stored OAuth token has expired (its `expiresAt`), it is renewed first by Claude Code itself: the `claude` CLI is started in stream-json mode, asked to `initialize` (which loads and refreshes its stored credentials, without any model request) and stopped. The expired token is never sent; if it cannot be renewed the status shows that the sign-in expired.
    - **OpenAI API key auth**: `GET https://api.openai.com/v1/usage?date=YYYY-MM-DD` plus `GET /v1/dashboard/billing/subscription`
    - **Codex ChatGPT OAuth auth**: searches `~/.codex/sessions/` recursively for the most recently modified `.jsonl` file and uses the embedded `rate_limits` snapshot (`300` minute and `10080` minute windows)
 4. The status bar renders one of five compact states per provider (checked in this order):
@@ -68,6 +68,10 @@ Clicking a status bar item opens the corresponding usage/settings page in your b
 6. Run **AI Limits: Refresh Now** from the Command Palette at any time to clear the cache and trigger an immediate fetch.
 
 ## Known Limitations
+
+### Claude Token Renewal
+
+Claude Code normally keeps the stored OAuth token fresh on its own. When it authenticates another way — for example with a long-lived `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`, which is also what the Claude agent in VS Code's chat can use — nothing renews the stored token, and it expires after a few hours. The extension then renews it through the `claude` CLI (found on `PATH` or in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin`), started without `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` so that it uses the stored credentials. At most one attempt is made every 5 minutes. If the CLI is not installed, run `claude` in a terminal once to renew the token.
 
 ### Claude Fallback Behavior
 
@@ -138,6 +142,7 @@ src/
   types.ts              Shared TypeScript interfaces
   statusBarManager.ts   Creates and updates the two status bar items
   fetchWithRetry.ts     Fetch wrapper with retry/back-off logic
+  claudeTokenRefresher.ts  Renews an expired Claude Code token through the `claude` CLI
   sharedCache.ts        In-memory cache keyed by token hash
   providers/
     claudeProvider.ts   Reads Claude credentials, then uses API and local fallbacks
@@ -148,6 +153,7 @@ test/
     index.ts            Mocha suite loader
     extension.test.ts
     claudeProvider.test.ts
+    claudeTokenRefresher.test.ts
     openaiProvider.test.ts
     sharedCache.test.ts
     statusBarManager.test.ts

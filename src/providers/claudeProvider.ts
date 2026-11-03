@@ -11,6 +11,10 @@
  *
  * The resolved token is then used as a Bearer token (OAuth) or x-api-key
  * header (API key starting with "sk-ant-api") to call Anthropic's usage API.
+ *
+ * An expired OAuth token is renewed through Claude Code first (see
+ * claudeTokenRefresher.ts); if it cannot be, the status says so instead of
+ * calling the API with it.
  */
 
 import { exec } from "child_process";
@@ -18,6 +22,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { refreshClaudeToken } from "../claudeTokenRefresher";
 import { RateLimitError, fetchWithRetry } from "../fetchWithRetry";
 import { getRateLimitBackoff, readCache, tokenKey, writeCache, writeRateLimitBackoff } from "../sharedCache";
 import { BudgetInfo, ProviderStatus, UsagePeriod } from "../types";
@@ -32,9 +37,22 @@ const KEYCHAIN_SERVICE = "Claude Code-credentials";
 
 /** Shape of the JSON blob stored in the Keychain / credentials file. */
 interface ClaudeCredentials {
-	claudeAiOauth?: { accessToken?: string };
+	claudeAiOauth?: { accessToken?: string; expiresAt?: number };
 	apiKey?: string;
 }
+
+/** A stored token, with when it expires (epoch ms) when the store says so. */
+export interface StoredCredential {
+	token: string;
+	expiresAt?: number;
+}
+
+/** Shown when the stored OAuth token expired and could not be renewed. */
+export const EXPIRED_TOKEN_MESSAGE =
+	"Claude Code sign-in expired and could not be renewed automatically. Run `claude` in a terminal once to renew it.";
+
+/** A token this close to expiry is treated as expired. */
+const EXPIRY_MARGIN_MS = 60_000;
 
 /** Shape of the Anthropic usage API response we care about. */
 interface AnthropicUsageResponse {
@@ -77,14 +95,24 @@ export class ClaudeProvider {
 			return notAvailable();
 		}
 
-		const token = await this.resolveToken();
+		let credential = await this.resolveCredential();
 
-		if (token === undefined) {
+		if (credential === undefined) {
 			return { available: true, authenticated: false, budget: null, error: null };
 		}
 
+		// An expired token is rejected by the usage endpoint (often as HTTP 429,
+		// which reads as an endless rate limit): renew it first, and never send it.
+		if (isExpired(credential)) {
+			if (await refreshClaudeToken()) credential = await this.resolveCredential();
+
+			if (credential === undefined || isExpired(credential)) {
+				return { available: true, authenticated: true, budget: null, error: EXPIRED_TOKEN_MESSAGE };
+			}
+		}
+
 		try {
-			const budget = await this.fetchBudget(token);
+			const budget = await this.fetchBudget(credential.token);
 
 			return { available: true, authenticated: true, budget, error: null };
 		} catch (err) {
@@ -102,6 +130,11 @@ export class ClaudeProvider {
    * is never blocked — a blocked loop prevents all timers from firing.
    */
 	async resolveToken(): Promise<string | undefined> {
+		return (await this.resolveCredential())?.token;
+	}
+
+	/** Like {@link resolveToken}, with the token's expiry when the store has it. */
+	async resolveCredential(): Promise<StoredCredential | undefined> {
 		// 1. macOS Keychain (async to keep the event loop free)
 		if (process.platform === "darwin") {
 			try {
@@ -119,9 +152,9 @@ export class ClaudeProvider {
 					child.unref();
 				});
 
-				const token = extractToken(raw);
+				const credential = extractCredential(raw);
 
-				if (token) return token;
+				if (credential) return credential;
 			} catch {
 				// Keychain entry not found or access denied – fall through.
 			}
@@ -132,9 +165,9 @@ export class ClaudeProvider {
 
 		try {
 			const raw = fs.readFileSync(credFile, "utf8");
-			const token = extractToken(raw);
+			const credential = extractCredential(raw);
 
-			if (token) return token;
+			if (credential) return credential;
 		} catch {
 			// File absent or unreadable – fall through.
 		}
@@ -316,18 +349,34 @@ function notAvailable(): ProviderStatus {
  * Exported for testing.
  */
 export function extractToken(raw: string): string | undefined {
+	return extractCredential(raw)?.token;
+}
+
+/** {@link extractToken} plus the OAuth token's `expiresAt` (epoch ms), when present. */
+export function extractCredential(raw: string): StoredCredential | undefined {
 	try {
 		const creds = JSON.parse(raw) as ClaudeCredentials;
 		const oauthToken = creds?.claudeAiOauth?.accessToken;
 
-		if (oauthToken) return oauthToken;
+		if (oauthToken) {
+			const expiresAt = creds.claudeAiOauth?.expiresAt;
 
-		if (creds?.apiKey) return creds.apiKey;
+			return typeof expiresAt === "number" && Number.isFinite(expiresAt)
+				? { token: oauthToken, expiresAt }
+				: { token: oauthToken };
+		}
+
+		if (creds?.apiKey) return { token: creds.apiKey };
 	} catch {
 		// Not valid JSON – ignore.
 	}
 
 	return undefined;
+}
+
+/** True when the store says the token has expired (or is about to). Unknown expiry is not expired. */
+export function isExpired(credential: StoredCredential, now = Date.now()): boolean {
+	return credential.expiresAt !== undefined && credential.expiresAt - EXPIRY_MARGIN_MS <= now;
 }
 
 function buildHeaders(token: string): Record<string, string> {
