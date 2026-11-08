@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import * as sinon from "sinon";
+import { stubForSource } from "./stubs";
 import fs = require("fs");
 import {
 	OpenAIProvider,
@@ -23,10 +24,10 @@ suite("OpenAIProvider", () => {
 	setup(() => {
 		provider = new OpenAIProvider();
 		getExtensionStub = sinon.stub(vscode.extensions, "getExtension");
-		readFileSyncStub = sinon.stub(fs, "readFileSync");
-		writeFileSyncStub = sinon.stub(fs, "writeFileSync");
-		mkdirSyncStub = sinon.stub(fs, "mkdirSync");
-		fetchStub = sinon.stub(global, "fetch" as keyof typeof global);
+		readFileSyncStub = stubForSource(fs, "readFileSync");
+		writeFileSyncStub = stubForSource(fs, "writeFileSync");
+		mkdirSyncStub = stubForSource(fs, "mkdirSync");
+		fetchStub = stubForSource(global, "fetch" as keyof typeof global);
 	});
 
 	teardown(() => {
@@ -117,7 +118,7 @@ suite("OpenAIProvider", () => {
 	});
 
 	test("returns zero-percent budget for JWT tokens when no Codex session data exists", async () => {
-		const existsSyncStub = sinon.stub(fs, "existsSync").returns(false);
+		stubForSource(fs, "existsSync").returns(false);
 
 		const budget = await provider.fetchBudget("eyJ.fake.jwt");
 
@@ -125,8 +126,6 @@ suite("OpenAIProvider", () => {
 		assert.strictEqual(budget.fiveHour?.unit, "percent");
 		assert.strictEqual(budget.oneWeek?.used, 0);
 		assert.strictEqual(budget.oneWeek?.unit, "percent");
-
-		existsSyncStub.restore();
 	});
 
 	test("returns cached budget without hitting the network when cache is fresh", async () => {

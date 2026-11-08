@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
+import { stubForSource } from "./stubs";
 import { EventEmitter, PassThrough } from "stream";
 import childProcess = require("child_process");
 import {
@@ -34,7 +35,7 @@ suite("claudeTokenRefresher", () => {
 
 	setup(() => {
 		resetRefreshCooldown();
-		spawnStub = sinon.stub(childProcess, "spawn");
+		spawnStub = stubForSource(childProcess, "spawn");
 	});
 
 	teardown(() => {

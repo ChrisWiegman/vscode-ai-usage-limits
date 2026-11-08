@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import * as sinon from "sinon";
+import { stubForSource } from "./stubs";
 import childProcess = require("child_process");
 import fs = require("fs");
 import refresher = require("../../src/claudeTokenRefresher");
@@ -33,17 +34,17 @@ suite("ClaudeProvider", () => {
 		// Stub exec so the keychain lookup immediately fails (non-blocking async),
 		// which causes resolveToken() to fall through to the file credential.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(sinon.stub(childProcess, "exec") as any).callsFake(
+		(stubForSource(childProcess, "exec") as any).callsFake(
 			(_cmd: string, _opts: unknown, cb: (err: Error | null, stdout: string)=> void) => {
 				if (typeof cb === "function") cb(new Error("keychain unavailable"), "");
 				return { unref: () => {}, kill: () => {} };
 			},
 		);
-		readFileSyncStub = sinon.stub(fs, "readFileSync");
-		existsSyncStub = sinon.stub(fs, "existsSync");
-		readdirSyncStub = sinon.stub(fs, "readdirSync");
-		writeFileSyncStub = sinon.stub(fs, "writeFileSync");
-		fetchStub = sinon.stub(global, "fetch" as keyof typeof global);
+		readFileSyncStub = stubForSource(fs, "readFileSync");
+		existsSyncStub = stubForSource(fs, "existsSync");
+		readdirSyncStub = stubForSource(fs, "readdirSync");
+		writeFileSyncStub = stubForSource(fs, "writeFileSync");
+		fetchStub = stubForSource(global, "fetch" as keyof typeof global);
 		refreshStub = sinon.stub(refresher, "refreshClaudeToken").resolves(false);
 	});
 

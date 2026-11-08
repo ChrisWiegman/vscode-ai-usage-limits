@@ -1,0 +1,3 @@
+kind: Chores
+body: Fix intermittent test-run crashes by limiting test stubs of shared functions (fs, fetch, child_process) to the extension's own code
+time: 2026-11-08T11:26:53.166429-06:00

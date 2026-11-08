@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
+import { stubForSource } from "./stubs";
 import fs = require("fs");
 import { readCache, writeCache, clearCache, tokenKey, CACHE_TTL_MS, CACHE_PATH } from "../../src/sharedCache";
 
@@ -10,10 +11,10 @@ suite("sharedCache", () => {
 	let unlinkSyncStub: sinon.SinonStub;
 
 	setup(() => {
-		readFileSyncStub = sinon.stub(fs, "readFileSync");
-		writeFileSyncStub = sinon.stub(fs, "writeFileSync");
-		mkdirSyncStub = sinon.stub(fs, "mkdirSync");
-		unlinkSyncStub = sinon.stub(fs, "unlinkSync");
+		readFileSyncStub = stubForSource(fs, "readFileSync");
+		writeFileSyncStub = stubForSource(fs, "writeFileSync");
+		mkdirSyncStub = stubForSource(fs, "mkdirSync");
+		unlinkSyncStub = stubForSource(fs, "unlinkSync");
 	});
 
 	teardown(() => {
